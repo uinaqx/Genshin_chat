@@ -4,6 +4,12 @@
 
 > 非官方粉丝项目。本项目与 HoYoverse、米哈游没有关联，角色、世界观、图片与相关素材版权归其原权利方所有。
 
+## 下载
+
+[一键下载 Android APK](https://github.com/uinaqx/genshin_chat/raw/main/releases/teyvat-chat-release.apk)
+
+当前仓库内提供已构建好的 APK：`releases/teyvat-chat-release.apk`。
+
 ## 功能
 
 - 微信式首页、通讯录、我的三栏结构
@@ -49,7 +55,7 @@ flutter build apk --release
 build/app/outputs/flutter-apk/app-release.apk
 ```
 
-本仓库不会提交构建产物。需要分发 APK 时，建议使用 GitHub Releases 上传。
+本仓库同时保留一份可直接下载的 APK：`releases/teyvat-chat-release.apk`。后续正式版本也可以继续使用 GitHub Releases 分发。
 
 ## API Key 与隐私
 
