@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.1+19
+
+- Stopped writing LLM failure notices into the chat as system messages; failures now only show a transient in-app toast.
+- Increased LLM request waiting time to reduce false failures on slower proxy or relay services.
+- Made optional web search failures non-blocking so search issues no longer interrupt normal character replies.
+- Clarified local error messages for missing API keys, daily call limits, and timeouts.
+
 ## 1.9.0+18
 
 - Added one-click API testing in setup and settings.

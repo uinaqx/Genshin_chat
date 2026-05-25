@@ -1,7 +1,7 @@
 name: genshin_chat
 description: "纯本地原神角色聊天 Android 应用。"
 publish_to: 'none'
-version: 1.9.0+18
+version: 1.9.1+19
 
 environment:
   sdk: ^3.11.3

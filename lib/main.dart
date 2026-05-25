@@ -59,6 +59,9 @@ String _friendlyLocalError(Object error) {
   if (normalized.startsWith('LLM ')) {
     return normalized;
   }
+  if (normalized.startsWith('请先填写') || normalized.contains('调用次数已达到上限')) {
+    return normalized;
+  }
   if (normalized.startsWith('HTTP ')) {
     return _friendlyHttpError(normalized);
   }
@@ -67,6 +70,7 @@ String _friendlyLocalError(Object error) {
       lower.contains('httpexception') ||
       lower.contains('connection abort') ||
       lower.contains('connection reset') ||
+      lower.contains('timeoutexception') ||
       lower.contains('timed out') ||
       lower.contains('errno = 103')) {
     return 'LLM 连接暂时中断，请稍后再试。';
@@ -731,14 +735,14 @@ class HttpTextClient {
     Map<String, String> headers,
   ) async {
     final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 12);
+      ..connectionTimeout = const Duration(seconds: 20);
     try {
       final request = await client.postUrl(uri);
       request.headers.contentType = ContentType.json;
       headers.forEach(request.headers.set);
       request.write(jsonEncode(body));
       final response = await request.close().timeout(
-        const Duration(seconds: 60),
+        const Duration(seconds: 120),
       );
       final text = await response.transform(utf8.decoder).join();
       if (response.statusCode >= 400) {
@@ -2088,13 +2092,15 @@ class ChatAgent {
       groupPlan: groupPlan,
     );
     if (settings.searchEnabled && _looksLikeSearchNeed(userText)) {
-      final result = await search.search(userText);
-      if (result.trim().isNotEmpty) {
-        messages.insert(1, {
-          'role': 'system',
-          'content': '联网搜索结果（只在确实相关时参考，不要说自己在搜索）：\n$result',
-        });
-      }
+      try {
+        final result = await search.search(userText);
+        if (result.trim().isNotEmpty) {
+          messages.insert(1, {
+            'role': 'system',
+            'content': '联网搜索结果（只在确实相关时参考，不要说自己在搜索）：\n$result',
+          });
+        }
+      } catch (_) {}
     }
     final draft = await _generator.generate(messages, plan);
     final content = await _validator.validateAndRewriteIfNeeded(
@@ -2629,18 +2635,7 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
         }
       }
     } catch (error) {
-      conversation.updatedAt = DateTime.now();
-      conversation.messages.add(
-        ChatMessage(
-          sender: 'system',
-          content: _friendlyLocalError(error),
-          createdAt: DateTime.now(),
-          authorName: '系统',
-        ),
-      );
-      await _store.saveConversations(_conversations);
       _showTransientError(error);
-      _notifyChanged();
     } finally {
       _busyConversations.remove(conversation.id);
       _typingStatus.remove(conversation.id);
@@ -2799,6 +2794,8 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
         }
         conversation.followUps.removeWhere((item) => item.id == followUp.id);
       }
+    } catch (error) {
+      _showTransientError(error);
     } finally {
       _busyConversations.remove(conversation.id);
       _typingStatus.remove(conversation.id);
