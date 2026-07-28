@@ -1,0 +1,873 @@
+"use client";
+
+import {
+  ArrowLeft,
+  Check,
+  ChevronRight,
+  ContactRound,
+  LogOut,
+  MessageCircleMore,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  UserRound,
+  UsersRound,
+  X,
+} from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+
+type Character = {
+  id: string;
+  name: string;
+  title?: string;
+  vision?: string;
+  nation?: string;
+  description?: string;
+  avatarUrl?: string;
+};
+
+type Message = {
+  id: string;
+  role: "user" | "assistant";
+  characterId: string | null;
+  authorName: string | null;
+  content: string;
+  createdAt: string;
+};
+
+type Conversation = {
+  id: string;
+  title: string;
+  type: "single" | "group";
+  memberIds: string[];
+  createdAt: string;
+  updatedAt: string;
+  messages: Message[];
+};
+
+type Tab = "chats" | "contacts" | "profile";
+
+export function ChatApp({
+  user,
+}: {
+  user: { displayName: string; initials: string };
+}) {
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeTab, setActiveTab] = useState<Tab>("chats");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const messagesRef = useRef<HTMLDivElement>(null);
+
+  const characterMap = useMemo(
+    () => new Map(characters.map((character) => [character.id, character])),
+    [characters],
+  );
+  const selectedConversation =
+    conversations.find((conversation) => conversation.id === selectedId) ?? null;
+
+  useEffect(() => {
+    void loadWorkspace();
+  }, []);
+
+  useLayoutEffect(() => {
+    const element = messagesRef.current;
+    if (element) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [selectedId, selectedConversation?.messages.length]);
+
+  async function loadWorkspace(preferredId?: string) {
+    try {
+      const [characterResponse, conversationResponse] = await Promise.all([
+        fetch("/api/characters"),
+        fetch("/api/conversations"),
+      ]);
+      const characterPayload = (await characterResponse.json()) as {
+        characters?: Character[];
+        error?: string;
+      };
+      const conversationPayload = (await conversationResponse.json()) as {
+        conversations?: Conversation[];
+        error?: string;
+      };
+      if (!characterResponse.ok || !conversationResponse.ok) {
+        throw new Error(
+          characterPayload.error || conversationPayload.error || "加载失败",
+        );
+      }
+      setCharacters(characterPayload.characters ?? []);
+      setConversations(conversationPayload.conversations ?? []);
+      if (preferredId) setSelectedId(preferredId);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function openCharacter(character: Character) {
+    setError("");
+    const response = await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "single", memberIds: [character.id] }),
+    });
+    const payload = (await response.json()) as {
+      id?: string;
+      error?: string;
+    };
+    if (!response.ok) {
+      setError(payload.error || "无法发起聊天");
+      return;
+    }
+    if (!payload.id) return;
+    await loadWorkspace(payload.id);
+    setActiveTab("chats");
+  }
+
+  async function sendMessage() {
+    const content = draft.trim();
+    const conversation = selectedConversation;
+    if (!content || !conversation || sending) return;
+    setDraft("");
+    setError("");
+    setSending(true);
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: Message = {
+      id: tempId,
+      role: "user",
+      characterId: null,
+      authorName: "旅行者",
+      content,
+      createdAt: new Date().toISOString(),
+    };
+    appendMessages(conversation.id, [optimistic]);
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conversation.id, content }),
+      });
+      const payload = (await response.json()) as {
+        userMessage?: Message;
+        replies?: Message[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "消息发送失败");
+      if (payload.userMessage) {
+        replaceMessage(conversation.id, tempId, payload.userMessage);
+      }
+      for (const reply of payload.replies ?? []) {
+        await wait(480);
+        appendMessages(conversation.id, [reply]);
+      }
+    } catch (sendError) {
+      removeMessage(conversation.id, tempId);
+      setDraft(content);
+      setError(sendError instanceof Error ? sendError.message : "消息发送失败");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function deleteConversation() {
+    if (!selectedConversation) return;
+    const response = await fetch(
+      `/api/conversations/${encodeURIComponent(selectedConversation.id)}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) {
+      setError("暂时无法删除这个对话");
+      return;
+    }
+    setConversations((current) =>
+      current.filter((item) => item.id !== selectedConversation.id),
+    );
+    setSelectedId(null);
+    setShowConversationMenu(false);
+  }
+
+  function appendMessages(conversationId: string, messages: Message[]) {
+    setConversations((current) =>
+      current.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              messages: [...conversation.messages, ...messages],
+              updatedAt: new Date().toISOString(),
+            }
+          : conversation,
+      ),
+    );
+  }
+
+  function replaceMessage(
+    conversationId: string,
+    messageId: string,
+    message: Message,
+  ) {
+    setConversations((current) =>
+      current.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              messages: conversation.messages.map((item) =>
+                item.id === messageId ? message : item,
+              ),
+            }
+          : conversation,
+      ),
+    );
+  }
+
+  function removeMessage(conversationId: string, messageId: string) {
+    setConversations((current) =>
+      current.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              messages: conversation.messages.filter(
+                (message) => message.id !== messageId,
+              ),
+            }
+          : conversation,
+      ),
+    );
+  }
+
+  const filteredConversations = conversations.filter((conversation) =>
+    `${conversation.title} ${conversation.messages.at(-1)?.content ?? ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  const filteredCharacters = characters.filter((character) =>
+    `${character.name} ${character.nation ?? ""} ${character.title ?? ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+
+  return (
+    <main className="app-stage">
+      <div className={`messenger-shell ${selectedConversation ? "has-chat" : ""}`}>
+        <aside className="sidebar">
+          <header className="sidebar-header">
+            <div>
+              <p className="section-kicker">提瓦特微信</p>
+              <h1>{tabTitle(activeTab)}</h1>
+            </div>
+            {activeTab === "chats" && (
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="新建群聊"
+                title="新建群聊"
+                onClick={() => setShowGroupModal(true)}
+              >
+                <Plus size={20} />
+              </button>
+            )}
+          </header>
+          {activeTab !== "profile" && (
+            <label className="search-box">
+              <Search size={17} aria-hidden="true" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={activeTab === "chats" ? "搜索聊天" : "搜索角色"}
+                aria-label={activeTab === "chats" ? "搜索聊天" : "搜索角色"}
+              />
+              {search && (
+                <button
+                  type="button"
+                  aria-label="清空搜索"
+                  onClick={() => setSearch("")}
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </label>
+          )}
+          <div className="sidebar-content">
+            {loading ? (
+              <LoadingRows />
+            ) : activeTab === "chats" ? (
+              <ConversationList
+                conversations={filteredConversations}
+                characterMap={characterMap}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
+            ) : activeTab === "contacts" ? (
+              <ContactList
+                characters={filteredCharacters}
+                onSelect={openCharacter}
+              />
+            ) : (
+              <ProfilePanel user={user} conversations={conversations} />
+            )}
+          </div>
+          <nav className="tab-bar" aria-label="主导航">
+            <TabButton
+              active={activeTab === "chats"}
+              label="聊天"
+              icon={<MessageCircleMore size={21} />}
+              onClick={() => setActiveTab("chats")}
+            />
+            <TabButton
+              active={activeTab === "contacts"}
+              label="通讯录"
+              icon={<ContactRound size={21} />}
+              onClick={() => setActiveTab("contacts")}
+            />
+            <TabButton
+              active={activeTab === "profile"}
+              label="我的"
+              icon={<UserRound size={21} />}
+              onClick={() => setActiveTab("profile")}
+            />
+          </nav>
+        </aside>
+
+        <section className="content-pane">
+          {selectedConversation ? (
+            <div className="chat-view">
+              <header className="chat-header">
+                <button
+                  className="icon-button mobile-back"
+                  type="button"
+                  aria-label="返回"
+                  onClick={() => setSelectedId(null)}
+                >
+                  <ArrowLeft size={21} />
+                </button>
+                <ConversationAvatar
+                  conversation={selectedConversation}
+                  characterMap={characterMap}
+                  size="small"
+                />
+                <div className="chat-heading">
+                  <h2>
+                    {sending && selectedConversation.type === "single"
+                      ? "正在输入..."
+                      : selectedConversation.title}
+                  </h2>
+                  {selectedConversation.type === "group" && (
+                    <span>{selectedConversation.memberIds.length} 位成员</span>
+                  )}
+                </div>
+                <button
+                  className="icon-button header-menu"
+                  type="button"
+                  aria-label="对话设置"
+                  title="对话设置"
+                  onClick={() =>
+                    setShowConversationMenu((current) => !current)
+                  }
+                >
+                  <MoreHorizontal size={22} />
+                </button>
+                {showConversationMenu && (
+                  <div className="conversation-menu">
+                    <button type="button" onClick={deleteConversation}>
+                      <Trash2 size={17} />
+                      删除对话
+                    </button>
+                  </div>
+                )}
+              </header>
+              <div className="message-list" ref={messagesRef}>
+                {selectedConversation.messages.length === 0 ? (
+                  <div className="empty-chat">
+                    <ConversationAvatar
+                      conversation={selectedConversation}
+                      characterMap={characterMap}
+                      size="large"
+                    />
+                    <h3>{selectedConversation.title}</h3>
+                    <p>
+                      {selectedConversation.type === "group"
+                        ? "群里安静着。发句话，看看谁会先接上。"
+                        : "从一句自然的招呼开始。"}
+                    </p>
+                  </div>
+                ) : (
+                  selectedConversation.messages.map((message) => (
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      character={message.characterId ? characterMap.get(message.characterId) : null}
+                      userInitial={user.initials}
+                      showName={selectedConversation.type === "group"}
+                    />
+                  ))
+                )}
+              </div>
+              <div className="composer-wrap">
+                {error && <div className="error-toast">{error}</div>}
+                <div className="composer">
+                  <textarea
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void sendMessage();
+                      }
+                    }}
+                    placeholder="输入消息"
+                    rows={1}
+                    aria-label="输入消息"
+                    disabled={sending}
+                  />
+                  <button
+                    className="send-button"
+                    type="button"
+                    aria-label="发送"
+                    title="发送"
+                    disabled={!draft.trim() || sending}
+                    onClick={() => void sendMessage()}
+                  >
+                    <Send size={19} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="welcome-pane">
+              <div className="welcome-symbol">
+                <Sparkles size={31} strokeWidth={1.5} />
+              </div>
+              <h2>提瓦特，正在发生</h2>
+              <p>从左侧选择一个对话，或在通讯录里找到想见的人。</p>
+            </div>
+          )}
+        </section>
+      </div>
+      {showGroupModal && (
+        <GroupModal
+          characters={characters}
+          onClose={() => setShowGroupModal(false)}
+          onCreated={async (id) => {
+            setShowGroupModal(false);
+            await loadWorkspace(id);
+            setActiveTab("chats");
+          }}
+        />
+      )}
+    </main>
+  );
+}
+
+function ConversationList({
+  conversations,
+  characterMap,
+  selectedId,
+  onSelect,
+}: {
+  conversations: Conversation[];
+  characterMap: Map<string, Character>;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  if (conversations.length === 0) {
+    return <EmptyList text="还没有对话，从通讯录里找个人吧。" />;
+  }
+  return (
+    <div className="conversation-list">
+      {conversations.map((conversation) => {
+        const lastMessage = conversation.messages.at(-1);
+        return (
+          <button
+            type="button"
+            key={conversation.id}
+            className={`conversation-row ${
+              selectedId === conversation.id ? "active" : ""
+            }`}
+            onClick={() => onSelect(conversation.id)}
+          >
+            <ConversationAvatar
+              conversation={conversation}
+              characterMap={characterMap}
+            />
+            <span className="row-main">
+              <span className="row-title-line">
+                <strong>{conversation.title}</strong>
+                <time>{formatListTime(conversation.updatedAt)}</time>
+              </span>
+              <span className="row-preview">
+                {lastMessage?.content || "还没有消息"}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ContactList({
+  characters,
+  onSelect,
+}: {
+  characters: Character[];
+  onSelect: (character: Character) => void;
+}) {
+  return (
+    <div className="contact-list">
+      {characters.map((character) => (
+        <button
+          type="button"
+          key={character.id}
+          className="contact-row"
+          onClick={() => void onSelect(character)}
+        >
+          <Avatar character={character} />
+          <span className="row-main">
+            <strong>{character.name}</strong>
+            <span>
+              {character.nation || "提瓦特"} · {character.title || "角色"}
+            </span>
+          </span>
+          <ChevronRight size={18} aria-hidden="true" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ProfilePanel({
+  user,
+  conversations,
+}: {
+  user: { displayName: string; initials: string };
+  conversations: Conversation[];
+}) {
+  return (
+    <div className="profile-panel">
+      <div className="account-row">
+        <span className="user-avatar large">{user.initials}</span>
+        <span>
+          <strong>{user.displayName}</strong>
+          <small>旅行者</small>
+        </span>
+      </div>
+      <div className="settings-group">
+        <div className="setting-row">
+          <ShieldCheck size={20} />
+          <span>
+            <strong>账号数据隔离</strong>
+            <small>聊天记录只属于当前登录账号</small>
+          </span>
+        </div>
+        <div className="setting-row">
+          <UsersRound size={20} />
+          <span>
+            <strong>{conversations.length} 个对话</strong>
+            <small>记录已安全保存在云端</small>
+          </span>
+        </div>
+      </div>
+      <a className="signout-link" href="/signout-with-chatgpt?return_to=%2F">
+        <LogOut size={18} />
+        退出登录
+      </a>
+      <p className="version-label">提瓦特微信 Web · 1.0</p>
+    </div>
+  );
+}
+
+function MessageBubble({
+  message,
+  character,
+  userInitial,
+  showName,
+}: {
+  message: Message;
+  character?: Character | null;
+  userInitial: string;
+  showName: boolean;
+}) {
+  const isUser = message.role === "user";
+  return (
+    <div className={`message-row ${isUser ? "user" : "assistant"}`}>
+      {!isUser && <Avatar character={character ?? undefined} size="message" />}
+      <div className="message-content">
+        {!isUser && showName && (
+          <span className="message-author">
+            {message.authorName || character?.name}
+          </span>
+        )}
+        <div className="bubble">{message.content}</div>
+      </div>
+      {isUser && <span className="user-avatar message">{userInitial}</span>}
+    </div>
+  );
+}
+
+function ConversationAvatar({
+  conversation,
+  characterMap,
+  size = "normal",
+}: {
+  conversation: Conversation;
+  characterMap: Map<string, Character>;
+  size?: "small" | "normal" | "large";
+}) {
+  if (conversation.type === "single") {
+    return (
+      <Avatar
+        character={characterMap.get(conversation.memberIds[0])}
+        size={size === "large" ? "large" : size === "small" ? "small" : "normal"}
+      />
+    );
+  }
+  const members = conversation.memberIds
+    .slice(0, 4)
+    .map((id) => characterMap.get(id))
+    .filter(Boolean) as Character[];
+  return (
+    <span className={`group-avatar avatar-${size}`}>
+      {members.map((member) => (
+        <img key={member.id} src={member.avatarUrl} alt="" />
+      ))}
+    </span>
+  );
+}
+
+function Avatar({
+  character,
+  size = "normal",
+}: {
+  character?: Character;
+  size?: "small" | "normal" | "large" | "message";
+}) {
+  if (character?.avatarUrl) {
+    return (
+      <img
+        className={`avatar avatar-${size}`}
+        src={character.avatarUrl}
+        alt={`${character.name}头像`}
+        loading="lazy"
+      />
+    );
+  }
+  return (
+    <span className={`avatar avatar-${size} avatar-fallback`}>
+      {character?.name.slice(0, 1) || "群"}
+    </span>
+  );
+}
+
+function TabButton({
+  active,
+  label,
+  icon,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={active ? "active" : ""}
+      onClick={onClick}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function GroupModal({
+  characters,
+  onClose,
+  onCreated,
+}: {
+  characters: Character[];
+  onClose: () => void;
+  onCreated: (id: string) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [name, setName] = useState("");
+  const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const characterMap = new Map(
+    characters.map((character) => [character.id, character]),
+  );
+  const visibleCharacters = characters.filter((character) =>
+    `${character.name}${character.nation ?? ""}`.includes(search),
+  );
+
+  async function createGroup() {
+    if (selected.length < 2 || saving) return;
+    setSaving(true);
+    const response = await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "group",
+        title: name.trim(),
+        memberIds: selected,
+      }),
+    });
+    const payload = (await response.json()) as {
+      id?: string;
+      error?: string;
+    };
+    if (!response.ok) {
+      setError(payload.error || "创建失败");
+      setSaving(false);
+      return;
+    }
+    if (payload.id) {
+      await onCreated(payload.id);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        className="group-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="group-modal-title"
+      >
+        <header>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="关闭">
+            <X size={20} />
+          </button>
+          <h2 id="group-modal-title">新建群聊</h2>
+          <button
+            className="text-action"
+            type="button"
+            disabled={selected.length < 2 || saving}
+            onClick={() => void createGroup()}
+          >
+            创建
+          </button>
+        </header>
+        <input
+          className="group-name-input"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="群聊名称（可选）"
+          aria-label="群聊名称"
+        />
+        <label className="search-box modal-search">
+          <Search size={17} />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索角色"
+            aria-label="搜索角色"
+          />
+        </label>
+        {selected.length > 0 && (
+          <div className="selected-people">
+            {selected.map((id) => {
+              const character = characterMap.get(id);
+              if (!character) return null;
+              return (
+                <button
+                  type="button"
+                  key={id}
+                  onClick={() =>
+                    setSelected((current) => current.filter((item) => item !== id))
+                  }
+                >
+                  <Avatar character={character} size="small" />
+                  <span>{character.name}</span>
+                  <X size={13} />
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="modal-contact-list">
+          {visibleCharacters.map((character) => {
+            const checked = selected.includes(character.id);
+            return (
+              <button
+                type="button"
+                key={character.id}
+                className="modal-contact-row"
+                onClick={() =>
+                  setSelected((current) =>
+                    checked
+                      ? current.filter((id) => id !== character.id)
+                      : [...current, character.id].slice(0, 12),
+                  )
+                }
+              >
+                <span className={`selection-control ${checked ? "checked" : ""}`}>
+                  {checked && <Check size={14} />}
+                </span>
+                <Avatar character={character} size="small" />
+                <span>
+                  <strong>{character.name}</strong>
+                  <small>{character.nation || "提瓦特"}</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {error && <p className="modal-error">{error}</p>}
+      </section>
+    </div>
+  );
+}
+
+function LoadingRows() {
+  return (
+    <div className="loading-rows" aria-label="正在加载">
+      {[0, 1, 2, 3].map((item) => (
+        <div key={item}>
+          <span />
+          <i />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyList({ text }: { text: string }) {
+  return <div className="empty-list">{text}</div>;
+}
+
+function tabTitle(tab: Tab) {
+  if (tab === "contacts") return "通讯录";
+  if (tab === "profile") return "我的";
+  return "聊天";
+}
+
+function formatListTime(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) {
+    return date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
