@@ -7,7 +7,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    _appVersion =
+        await const MethodChannel(
+          'genshin_chat/files',
+        ).invokeMethod<String>('getAppVersion') ??
+        _appVersion;
+  } on PlatformException {
+    // The build version remains available even if the Android channel is not.
+  }
   runApp(const TeyvatChatApp());
 }
 
@@ -20,7 +30,7 @@ const _wechatSubText = Color(0xFF888888);
 const _wechatLine = Color(0xFFE5E5E5);
 const _wechatBar = Color(0xFFF7F7F7);
 const _wechatChatBg = Color(0xFFEDEDED);
-const _appVersion = '1.9.0+18';
+String _appVersion = '2.0.0+20';
 
 class TravelerProfile {
   const TravelerProfile({
@@ -142,6 +152,32 @@ String _safeErrorDetail(String text) {
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
   return cleaned.substring(0, min(180, cleaned.length));
+}
+
+Future<void> _showApiTestDialog(
+  BuildContext context, {
+  required bool success,
+  required String message,
+}) {
+  return showDialog<void>(
+    context: context,
+    useRootNavigator: true,
+    builder: (dialogContext) => AlertDialog(
+      icon: Icon(
+        success ? Icons.check_circle_outline : Icons.error_outline,
+        color: success ? _wechatGreen : Colors.red.shade600,
+        size: 34,
+      ),
+      title: Text(success ? 'API 测试成功' : 'API 测试失败'),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('知道了'),
+        ),
+      ],
+    ),
+  );
 }
 
 class Character {
@@ -352,7 +388,7 @@ class ConversationState {
     required this.id,
     required this.title,
     required this.type,
-    required this.memberIds,
+    required List<String> memberIds,
     DateTime? updatedAt,
     List<ChatMessage>? messages,
     this.summary = '',
@@ -363,12 +399,17 @@ class ConversationState {
     this.nextPingAt,
     this.lastUserReplyAt,
     this.lastCharacterPingAt,
+    this.lastProactiveAt,
+    this.lastProactiveTopic = '',
+    Map<String, DateTime>? lastSpokeAtByCharacter,
     this.cooldownMinutes = 90,
     this.pingFrequency = 'medium',
-  }) : updatedAt = updatedAt ?? DateTime.now(),
+  }) : memberIds = List<String>.from(memberIds),
+       updatedAt = updatedAt ?? DateTime.now(),
        messages = messages ?? [],
        followUps = followUps ?? [],
-       memoryMdByCharacter = memoryMdByCharacter ?? {};
+       memoryMdByCharacter = memoryMdByCharacter ?? {},
+       lastSpokeAtByCharacter = lastSpokeAtByCharacter ?? {};
 
   final String id;
   String title;
@@ -384,6 +425,9 @@ class ConversationState {
   DateTime? nextPingAt;
   DateTime? lastUserReplyAt;
   DateTime? lastCharacterPingAt;
+  DateTime? lastProactiveAt;
+  String lastProactiveTopic;
+  Map<String, DateTime> lastSpokeAtByCharacter;
   int cooldownMinutes;
   String pingFrequency;
 
@@ -409,6 +453,11 @@ class ConversationState {
     'nextPingAt': nextPingAt?.toIso8601String(),
     'lastUserReplyAt': lastUserReplyAt?.toIso8601String(),
     'lastCharacterPingAt': lastCharacterPingAt?.toIso8601String(),
+    'lastProactiveAt': lastProactiveAt?.toIso8601String(),
+    'lastProactiveTopic': lastProactiveTopic,
+    'lastSpokeAtByCharacter': lastSpokeAtByCharacter.map(
+      (key, value) => MapEntry(key, value.toIso8601String()),
+    ),
     'cooldownMinutes': cooldownMinutes,
     'pingFrequency': pingFrequency,
   };
@@ -442,10 +491,191 @@ class ConversationState {
       lastCharacterPingAt: DateTime.tryParse(
         json['lastCharacterPingAt'] as String? ?? '',
       ),
+      lastProactiveAt: DateTime.tryParse(
+        json['lastProactiveAt'] as String? ?? '',
+      ),
+      lastProactiveTopic: json['lastProactiveTopic'] as String? ?? '',
+      lastSpokeAtByCharacter:
+          (json['lastSpokeAtByCharacter'] as Map<String, dynamic>? ?? {}).map(
+            (key, value) => MapEntry(
+              key,
+              DateTime.tryParse(value.toString()) ?? DateTime(2000),
+            ),
+          ),
       cooldownMinutes: json['cooldownMinutes'] as int? ?? 90,
       pingFrequency: json['pingFrequency'] as String? ?? 'medium',
     );
   }
+}
+
+String _messagePersistenceKey(ChatMessage message) {
+  return [
+    message.createdAt.microsecondsSinceEpoch,
+    message.sender,
+    message.characterId ?? '',
+    message.authorName ?? '',
+    message.content,
+  ].join('\u0001');
+}
+
+bool _isConversationStateNewer(
+  ConversationState source,
+  ConversationState target,
+) {
+  final sourceLastMessage = source.messages.isEmpty
+      ? null
+      : source.messages.last.createdAt;
+  final targetLastMessage = target.messages.isEmpty
+      ? null
+      : target.messages.last.createdAt;
+  return source.updatedAt.isAfter(target.updatedAt) ||
+      (sourceLastMessage != null &&
+          (targetLastMessage == null ||
+              sourceLastMessage.isAfter(targetLastMessage))) ||
+      source.messages.length > target.messages.length;
+}
+
+void _adoptConversationState(
+  ConversationState target,
+  ConversationState source,
+) {
+  target.title = source.title;
+  target.memberIds
+    ..clear()
+    ..addAll(source.memberIds);
+  target.updatedAt = source.updatedAt;
+  target.messages = List<ChatMessage>.from(source.messages);
+  target.summary = source.summary;
+  target.summarizedCount = source.summarizedCount;
+  target.followUps = List<ScheduledFollowUp>.from(source.followUps);
+  target.memoryMdByCharacter = Map<String, String>.from(
+    source.memoryMdByCharacter,
+  );
+  target.realChatEnabled = source.realChatEnabled;
+  target.nextPingAt = source.nextPingAt;
+  target.lastUserReplyAt = source.lastUserReplyAt;
+  target.lastCharacterPingAt = source.lastCharacterPingAt;
+  target.lastProactiveAt = source.lastProactiveAt;
+  target.lastProactiveTopic = source.lastProactiveTopic;
+  target.lastSpokeAtByCharacter = Map<String, DateTime>.from(
+    source.lastSpokeAtByCharacter,
+  );
+  target.cooldownMinutes = source.cooldownMinutes;
+  target.pingFrequency = source.pingFrequency;
+}
+
+DateTime? _laterDate(DateTime? first, DateTime? second) {
+  if (first == null) {
+    return second;
+  }
+  if (second == null) {
+    return first;
+  }
+  return first.isAfter(second) ? first : second;
+}
+
+void _mergeConversationForPersistence(
+  ConversationState target,
+  ConversationState disk,
+) {
+  final localTitle = target.title;
+  final localMemberIds = List<String>.from(target.memberIds);
+  final localMessages = List<ChatMessage>.from(target.messages);
+  final localMessageKeys = localMessages.map(_messagePersistenceKey).toSet();
+  final diskMessageKeys = disk.messages.map(_messagePersistenceKey).toSet();
+  final localOnlyMessages = localMessages
+      .where(
+        (message) => !diskMessageKeys.contains(_messagePersistenceKey(message)),
+      )
+      .toList();
+  final diskOnlyMessages = disk.messages
+      .where(
+        (message) =>
+            !localMessageKeys.contains(_messagePersistenceKey(message)),
+      )
+      .toList();
+  final localFollowUps = List<ScheduledFollowUp>.from(target.followUps);
+  final localMemory = Map<String, String>.from(target.memoryMdByCharacter);
+  final localRealChatEnabled = target.realChatEnabled;
+  final localNextPingAt = target.nextPingAt;
+  final localLastUserReplyAt = target.lastUserReplyAt;
+  final localLastCharacterPingAt = target.lastCharacterPingAt;
+  final localLastProactiveAt = target.lastProactiveAt;
+  final localLastProactiveTopic = target.lastProactiveTopic;
+  final localLastSpokeAt = Map<String, DateTime>.from(
+    target.lastSpokeAtByCharacter,
+  );
+  final localCooldownMinutes = target.cooldownMinutes;
+  final localPingFrequency = target.pingFrequency;
+  final localUpdatedAt = target.updatedAt;
+  final diskIsNewer = _isConversationStateNewer(disk, target);
+
+  if (diskIsNewer) {
+    _adoptConversationState(target, disk);
+  }
+
+  target.title = localTitle;
+  target.memberIds
+    ..clear()
+    ..addAll(localMemberIds);
+  target.realChatEnabled = localRealChatEnabled;
+  target.cooldownMinutes = localCooldownMinutes;
+  target.pingFrequency = localPingFrequency;
+
+  final mergedMessages = <ChatMessage>[...localMessages, ...diskOnlyMessages]
+    ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  target.messages = mergedMessages;
+
+  if (localOnlyMessages.isNotEmpty) {
+    final firstLocalOnlyAt = localOnlyMessages
+        .map((message) => message.createdAt)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    final followUpsById = {for (final item in disk.followUps) item.id: item};
+    for (final item in localFollowUps) {
+      if (followUpsById.containsKey(item.id) ||
+          !item.createdAt.isBefore(firstLocalOnlyAt)) {
+        followUpsById[item.id] = item;
+      }
+    }
+    target.followUps = followUpsById.values.toList()
+      ..sort((a, b) => a.dueAt.compareTo(b.dueAt));
+    target.memoryMdByCharacter = {...disk.memoryMdByCharacter, ...localMemory};
+    target.nextPingAt = localNextPingAt;
+  } else if (!diskIsNewer) {
+    target.followUps = localFollowUps;
+    target.memoryMdByCharacter = localMemory;
+    target.nextPingAt = localNextPingAt;
+  }
+
+  target.lastUserReplyAt = _laterDate(
+    localLastUserReplyAt,
+    disk.lastUserReplyAt,
+  );
+  target.lastCharacterPingAt = _laterDate(
+    localLastCharacterPingAt,
+    disk.lastCharacterPingAt,
+  );
+  target.lastProactiveAt = _laterDate(
+    localLastProactiveAt,
+    disk.lastProactiveAt,
+  );
+  if (localLastProactiveAt != null &&
+      (disk.lastProactiveAt == null ||
+          !localLastProactiveAt.isBefore(disk.lastProactiveAt!))) {
+    target.lastProactiveTopic = localLastProactiveTopic;
+  }
+  for (final entry in localLastSpokeAt.entries) {
+    target.lastSpokeAtByCharacter[entry.key] = _laterDate(
+      entry.value,
+      target.lastSpokeAtByCharacter[entry.key],
+    )!;
+  }
+
+  var newestAt = _laterDate(localUpdatedAt, disk.updatedAt)!;
+  if (target.messages.isNotEmpty) {
+    newestAt = _laterDate(newestAt, target.messages.last.createdAt)!;
+  }
+  target.updatedAt = newestAt;
 }
 
 class AppSettings {
@@ -577,7 +807,34 @@ class LocalStore {
     final file = File(
       '${(await _baseDir()).path}${Platform.pathSeparator}$fileName',
     );
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(data));
+    final contents = const JsonEncoder.withIndent('  ').convert(data);
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsString(contents, flush: true);
+    try {
+      await temporary.rename(file.path);
+    } on FileSystemException {
+      await file.writeAsString(contents, flush: true);
+      if (await temporary.exists()) {
+        await temporary.delete();
+      }
+    }
+  }
+
+  Future<T> _withConversationLock<T>(Future<T> Function() action) async {
+    final lockFile = File(
+      '${(await _baseDir()).path}${Platform.pathSeparator}'
+      'follow_up_worker.lock',
+    );
+    final handle = await lockFile.open(mode: FileMode.append);
+    try {
+      await handle.lock(FileLock.exclusive);
+      return await action();
+    } finally {
+      try {
+        await handle.unlock();
+      } catch (_) {}
+      await handle.close();
+    }
   }
 
   Future<String> _loadApiKeyFromPlatform() async {
@@ -627,20 +884,34 @@ class LocalStore {
   }
 
   Future<Map<String, ConversationState>> loadConversations() async {
-    final data = await _readJson('conversations.json', {'items': []});
-    final result = <String, ConversationState>{};
-    for (final item in data['items'] as List<dynamic>? ?? []) {
-      final conversation = ConversationState.fromJson(
-        item as Map<String, dynamic>,
-      );
-      result[conversation.id] = conversation;
-    }
-    return result;
+    return _withConversationLock(() async {
+      final data = await _readJson('conversations.json', {'items': []});
+      final result = <String, ConversationState>{};
+      for (final item in data['items'] as List<dynamic>? ?? []) {
+        final conversation = ConversationState.fromJson(
+          item as Map<String, dynamic>,
+        );
+        result[conversation.id] = conversation;
+      }
+      return result;
+    });
   }
 
   Future<void> saveConversations(Map<String, ConversationState> conversations) {
-    final items = conversations.values.map((c) => c.toJson()).toList();
-    return _writeJson('conversations.json', {'items': items});
+    return _withConversationLock(() async {
+      final data = await _readJson('conversations.json', {'items': []});
+      for (final item in data['items'] as List<dynamic>? ?? []) {
+        final disk = ConversationState.fromJson(item as Map<String, dynamic>);
+        final local = conversations[disk.id];
+        if (local == null) {
+          conversations[disk.id] = disk;
+        } else {
+          _mergeConversationForPersistence(local, disk);
+        }
+      }
+      final items = conversations.values.map((c) => c.toJson()).toList();
+      await _writeJson('conversations.json', {'items': items});
+    });
   }
 }
 
@@ -876,17 +1147,28 @@ class LlmClient {
         maxTokens: maxTokens,
       );
     }
-    final text = await _http.postJson(
-      _openAiChatUri(settings.baseUrl),
-      {
-        'model': settings.model.trim(),
-        'messages': messages,
-        'temperature': temperature,
-        'max_tokens': max(16, maxTokens ?? settings.maxTokens),
-      },
-      {'Authorization': 'Bearer ${settings.apiKey.trim()}'},
-    );
-    final data = jsonDecode(text) as Map<String, dynamic>;
+    final requestedTokens = max(16, maxTokens ?? settings.maxTokens);
+    var tokenBudget = _openAiTokenBudget(settings.model, requestedTokens);
+    Future<Map<String, dynamic>> request() async {
+      final text = await _http.postJson(
+        _openAiChatUri(settings.baseUrl),
+        {
+          'model': settings.model.trim(),
+          'messages': messages,
+          'temperature': temperature,
+          'max_tokens': tokenBudget,
+        },
+        {'Authorization': 'Bearer ${settings.apiKey.trim()}'},
+      );
+      return jsonDecode(text) as Map<String, dynamic>;
+    }
+
+    var data = await request();
+    if (_openAiWasTruncated(data) && tokenBudget < 1024) {
+      _checkDailyLimit(settings);
+      tokenBudget = min(1024, max(768, tokenBudget * 2));
+      data = await request();
+    }
     return _extractOpenAiText(data);
   }
 
@@ -914,6 +1196,9 @@ class LlmClient {
       }
       throw Exception('LLM 调用失败：$error');
     }
+    if (_openAiWasTruncated(data)) {
+      throw Exception('LLM 输出被模型截断，请稍后重试或提高单次 Token 上限。');
+    }
     final outputText = data['output_text']?.toString().trim() ?? '';
     if (outputText.isNotEmpty) {
       return outputText;
@@ -932,8 +1217,6 @@ class LlmClient {
         if (message is Map<String, dynamic>) {
           final content = _contentToText(message['content']).trim();
           if (content.isNotEmpty) return content;
-          final reasoning = _contentToText(message['reasoning_content']).trim();
-          if (reasoning.isNotEmpty) return reasoning;
         }
         final text = _contentToText(first['text']).trim();
         if (text.isNotEmpty) return text;
@@ -947,6 +1230,28 @@ class LlmClient {
     throw Exception(
       'LLM 返回格式无法识别：${jsonEncode(data).substring(0, min(300, jsonEncode(data).length))}',
     );
+  }
+
+  int _openAiTokenBudget(String model, int requested) {
+    final normalized = model.toLowerCase();
+    final usesReasoningTokens =
+        normalized.contains('reasoner') ||
+        normalized.contains('deepseek-r1') ||
+        normalized.contains('deepseek-v4');
+    return usesReasoningTokens ? max(requested, 384) : requested;
+  }
+
+  bool _openAiWasTruncated(Map<String, dynamic> data) {
+    final choices = data['choices'];
+    if (choices is! List || choices.isEmpty) {
+      return false;
+    }
+    final first = choices.first;
+    if (first is! Map<String, dynamic>) {
+      return false;
+    }
+    final reason = first['finish_reason']?.toString().toLowerCase() ?? '';
+    return reason == 'length' || reason == 'max_tokens';
   }
 
   String _contentToText(Object? content) {
@@ -1350,6 +1655,9 @@ class DialoguePlan {
     required this.shouldAskBack,
     required this.maxSentences,
     required this.avoidExplanation,
+    this.maxCharacters = 72,
+    this.rhythm = '自然短句',
+    this.messageCount = 1,
   });
 
   final bool shouldReply;
@@ -1359,6 +1667,9 @@ class DialoguePlan {
   final bool shouldAskBack;
   final int maxSentences;
   final bool avoidExplanation;
+  final int maxCharacters;
+  final String rhythm;
+  final int messageCount;
 
   String get lengthLabel => switch (length) {
     ReplyLength.veryShort => 'very_short',
@@ -1390,10 +1701,28 @@ class DialoguePlanner {
   }) {
     final text = userText.trim();
     final asksKnowledge = RegExp(
-      r'(怎么|为什么|攻略|版本|剧情|设定|机制|哪里|多少|如何|[?？])',
+      r'(攻略|版本|剧情|设定|机制|配队|圣遗物|武器|材料|数值|伤害|怎么培养|如何获得|在哪里获取)',
     ).hasMatch(text);
-    final tired = RegExp(r'(累|烦|崩|难受|睡不着|焦虑|不想|压力)').hasMatch(text);
-    final tiny = RegExp(r'^(嗯|好|行|哈哈|hhh|哦|ok|OK|6|？|\?)$').hasMatch(text);
+    final asksDailyQuestion = RegExp(
+      r'(你在干嘛|在吗|睡了吗|吃了吗|今天怎么样|最近怎么样|你呢|忙吗)',
+    ).hasMatch(text);
+    final tired = RegExp(r'(累|烦|崩|难受|睡不着|焦虑|不想|压力|委屈|生气|低落)').hasMatch(text);
+    final tiny = RegExp(
+      r'^(嗯|好|行|哈哈+|hhh+|哦|噢|ok|OK|6|？|\?|收到|知道了)$',
+    ).hasMatch(text);
+    final greeting = RegExp(
+      r'^(早|早安|上午好|中午好|下午好|晚上好|晚安|嗨|你好)[呀啊哦～~！!。.]?$',
+    ).hasMatch(text);
+    final previousAsked = conversation.messages.reversed
+        .where((message) => !message.isUser)
+        .take(1)
+        .any((message) => RegExp(r'[?？]').hasMatch(message.content));
+    final lastMessageAt = conversation.messages.length > 1
+        ? conversation.messages[conversation.messages.length - 2].createdAt
+        : null;
+    final resumedAfterGap =
+        lastMessageAt != null &&
+        DateTime.now().difference(lastMessageAt) > const Duration(hours: 6);
     if (tiny) {
       return const DialoguePlan(
         shouldReply: true,
@@ -1403,38 +1732,74 @@ class DialoguePlanner {
         shouldAskBack: false,
         maxSentences: 1,
         avoidExplanation: true,
+        maxCharacters: 24,
+        rhythm: '一句随口反应，可以不完整',
       );
     }
     if (asksKnowledge) {
       return const DialoguePlan(
         shouldReply: true,
-        dialogueAct: '回答问题+轻微追问',
+        dialogueAct: '直接回答角色确实知道的内容',
         length: ReplyLength.medium,
         emotion: '认真但不端着',
-        shouldAskBack: true,
-        maxSentences: 4,
+        shouldAskBack: false,
+        maxSentences: 3,
         avoidExplanation: false,
+        maxCharacters: 150,
+        rhythm: '先给结论，再补一两个必要细节',
+      );
+    }
+    if (asksDailyQuestion) {
+      return DialoguePlan(
+        shouldReply: true,
+        dialogueAct: '从角色此刻自己的生活自然回应',
+        length: ReplyLength.short,
+        emotion: '熟人间随口聊天',
+        shouldAskBack: !previousAsked,
+        maxSentences: 2,
+        avoidExplanation: true,
+        maxCharacters: 64,
+        rhythm: '先说自己正在做的具体小事，不要立刻提供帮助',
+        messageCount: 2,
       );
     }
     if (tired) {
-      return const DialoguePlan(
+      return DialoguePlan(
         shouldReply: true,
         dialogueAct: '关心+追问',
         length: ReplyLength.short,
         emotion: '关心但不夸张',
-        shouldAskBack: true,
+        shouldAskBack: !previousAsked,
         maxSentences: 2,
         avoidExplanation: true,
+        maxCharacters: 72,
+        rhythm: '先有角色自己的反应，最多追问一个具体问题',
+        messageCount: text.length >= 5 ? 2 : 1,
       );
     }
-    return const DialoguePlan(
+    if (greeting) {
+      return DialoguePlan(
+        shouldReply: true,
+        dialogueAct: resumedAfterGap ? '自然重新接上关系' : '简短回应招呼',
+        length: ReplyLength.veryShort,
+        emotion: '熟悉而自然',
+        shouldAskBack: false,
+        maxSentences: 1,
+        avoidExplanation: true,
+        maxCharacters: 34,
+        rhythm: '不要客服式问候，不要汇报功能',
+      );
+    }
+    return DialoguePlan(
       shouldReply: true,
-      dialogueAct: '自然接话',
+      dialogueAct: resumedAfterGap ? '像隔了一阵后重新接上话题' : '自然接话',
       length: ReplyLength.short,
       emotion: '像微信朋友聊天',
-      shouldAskBack: true,
+      shouldAskBack: !previousAsked && text.length >= 5,
       maxSentences: 2,
       avoidExplanation: true,
+      maxCharacters: 68,
+      rhythm: '可以只回应、吐槽或分享自己的联想，不必每次反问',
     );
   }
 }
@@ -1468,10 +1833,16 @@ class GroupChatOrchestrator {
       return const [];
     }
     try {
+      final now = DateTime.now();
       final profiles = members
           .map((c) {
             final p = CharacterProfile.fromCharacter(c);
-            return '${c.id}:${c.name}，群聊倾向：${p.groupSpeakingTendency}，语气：${p.tone}';
+            final lastSpokeAt = conversation.lastSpokeAtByCharacter[c.id];
+            final recency = lastSpokeAt == null
+                ? '本群尚未发言'
+                : '${now.difference(lastSpokeAt).inMinutes}分钟前发过言';
+            return '${c.id}:${c.name}，群聊倾向：${p.groupSpeakingTendency}，'
+                '语气：${p.tone}，最近状态：$recency';
           })
           .join('\n');
       final raw = await llm.complete(
@@ -1480,12 +1851,17 @@ class GroupChatOrchestrator {
           {
             'role': 'system',
             'content':
-                '你是群聊导演，只输出JSON。决定本轮0到${settings.groupMaxSpeakers.clamp(1, 3)}个角色发言。不要让所有人排队读后感。允许沉默，允许接话，允许转移话题。',
+                '你是日常微信群聊导演，只输出JSON。决定本轮0到${settings.groupMaxSpeakers.clamp(1, 3)}个角色发言。'
+                '优先选择被点名、与话题有关、性格上会接话的人；刚说过的人降低优先级。'
+                '允许无人回复、有人只吐槽半句、角色互相接话或转移话题。不要让所有人排队读后感。',
           },
           {
             'role': 'user',
             'content':
-                '群成员：\n$profiles\n\n最近聊天：\n${_recentText(conversation, 14)}\n\n旅行者刚说：$userText\n\n输出格式：{"speakers":[{"character_id":"id","reason":"原因","dialogue_act":"吐槽/关心/回答/沉默等","length":"very_short/short/medium"}]}',
+                '当前本地时间：${_chatTimeLabel(now)}\n'
+                '群成员：\n$profiles\n\n最近聊天：\n${_recentText(conversation, 16)}\n\n'
+                '旅行者刚说：$userText\n\n'
+                '输出格式：{"speakers":[{"character_id":"id","reason":"原因","dialogue_act":"吐槽/关心/回答/接别人话/转移话题等","length":"very_short/short/medium"}]}',
           },
         ],
         temperature: 0.35,
@@ -1531,6 +1907,11 @@ class GroupChatOrchestrator {
         score += 10;
       }
       final p = CharacterProfile.fromCharacter(c);
+      final lastSpokeAt = conversation.lastSpokeAtByCharacter[c.id];
+      if (lastSpokeAt != null &&
+          DateTime.now().difference(lastSpokeAt) < const Duration(minutes: 8)) {
+        score -= 4;
+      }
       if (RegExp(r'(累|烦|睡|考试|项目|学习)').hasMatch(userText) &&
           (p.tone.contains('温') ||
               p.tone.contains('沉') ||
@@ -1543,24 +1924,41 @@ class GroupChatOrchestrator {
               p.tone.contains('活'))) {
         score += 3;
       }
+      if (p.groupSpeakingTendency.contains('不抢') ||
+          p.groupSpeakingTendency.contains('不频繁')) {
+        score -= 1;
+      }
+      if (p.groupSpeakingTendency.contains('插话') ||
+          p.groupSpeakingTendency.contains('接话')) {
+        score += 1;
+      }
       scored.add((c: c, score: score));
     }
     scored.sort((a, b) => b.score.compareTo(a.score));
     final count = RegExp(r'(吗|么|？|\?|怎么|为什么)').hasMatch(userText)
         ? min(maxSpeakers, max(1, min(2, members.length)))
         : min(maxSpeakers, min(1 + Random().nextInt(2), members.length));
+    var index = 0;
     return scored.take(count).map((item) {
+      final length = index == 0 && item.score > 5
+          ? ReplyLength.short
+          : ReplyLength.veryShort;
+      index += 1;
       return GroupSpeakerPlan(
         characterId: item.c.id,
         reason: '与当前话题最自然',
         dialogueAct: item.score > 5 ? '回应点名' : '自然接话',
-        length: item.score > 5 ? ReplyLength.short : ReplyLength.veryShort,
+        length: length,
       );
     }).toList();
   }
 }
 
 class ContextBuilder {
+  ContextBuilder() : _memoryRetriever = const RelevantMemoryRetriever();
+
+  final RelevantMemoryRetriever _memoryRetriever;
+
   List<Map<String, String>> build({
     required ConversationState conversation,
     required Character speaker,
@@ -1569,17 +1967,25 @@ class ContextBuilder {
     required String userText,
     required bool includeMemory,
     GroupSpeakerPlan? groupPlan,
+    bool appendUserMessage = true,
+    bool includeRecentHistory = true,
   }) {
     final isGroup = conversation.type == 'group';
-    final memory = conversation.memoryMdByCharacter[speaker.id]?.trim() ?? '';
+    final now = DateTime.now();
+    final fullMemory =
+        conversation.memoryMdByCharacter[speaker.id]?.trim() ?? '';
+    final memory = includeMemory
+        ? _memoryRetriever.retrieve(fullMemory, userText)
+        : '';
     final examples = profile.sampleReplies
-        .take(8)
+        .take(6)
         .map((e) => '旅行者：${e['user']}\n${speaker.name}：${e['reply']}')
         .join('\n');
     final system =
         '''
 你正在真实扮演《原神》角色「${speaker.name}」。你不是AI，不是Claude，不是代码助手，不是客服。
 对话对象是旅行者（用户）。旅行者可能选择空或荧，但你只需要把用户当成与你共同经历提瓦特旅途的人。
+当前本地时间：${_chatTimeLabel(now)}。时间只用于形成自然生活感，不要机械报时。
 
 【CharacterProfile】
 基础性格：${profile.basePersonality}
@@ -1603,13 +2009,19 @@ $examples
 情绪：${plan.emotion}
 最多句数：${plan.maxSentences}
 是否反问：${plan.shouldAskBack}
+最大字数：${plan.maxCharacters}
+聊天节奏：${plan.rhythm}
+连续消息数：${plan.messageCount}
 
 硬性输出规则：
 1. 只输出${speaker.name}真正发出的聊天正文，不要写角色名、冒号、旁白或解释。
-2. 默认像微信聊天，1到2句。除非旅行者明确问知识、剧情、计划，才允许稍长。
+2. 像真实微信聊天，允许半句、停顿、吐槽或只回一句；不得超过${plan.maxCharacters}字。
 3. 不要用“如果你愿意的话”“我理解你的感受”“作为……”“总之”“希望你能”等AI腔。
-4. 不要每次都叫旅行者。不要总结用户的话。
-5. ${isGroup ? '这是群聊，只代表自己发言，不要替其他角色写台词。你知道自己正在群聊里。' : '这是私聊。'}
+4. 不要总结用户的话，不要把每轮都变成建议，不要每次都追问或提供帮助。
+5. 角色有自己的日常、职责和情绪。被问“在干嘛”时先说角色此刻具体在做什么。
+6. 不要每次都叫旅行者。${plan.shouldAskBack ? '可以自然追问一次，但不是必须。' : '这一轮不要用问题结尾。'}
+7. ${isGroup ? '这是群聊，只代表自己发言，不要替其他角色写台词。你知道自己正在群聊里。' : '这是私聊。'}
+8. ${plan.messageCount > 1 ? '这一轮可以像真人一样连续发送${plan.messageCount}条短消息，每条用一个换行分隔；后一句要自然接着前一句，不能重复。' : '这一轮只发送一条消息，不要用换行拆分。'}
 ''';
     final messages = <Map<String, String>>[
       {'role': 'system', 'content': system},
@@ -1623,27 +2035,134 @@ $examples
     if (includeMemory && memory.isNotEmpty) {
       messages.add({
         'role': 'system',
-        'content': 'MemoryMD（只取相关事实，不要照抄）：\n$memory',
+        'content': '与本轮最相关的 MemoryMD 片段（只作为记忆，不要照抄）：\n$memory',
       });
     }
-    final recent = conversation.messages.length > 18
-        ? conversation.messages.sublist(conversation.messages.length - 18)
-        : conversation.messages;
-    for (final message in recent) {
-      if (message.isUser) {
-        messages.add({'role': 'user', 'content': message.content});
-      } else {
-        final name = message.authorName ?? '角色';
-        messages.add({
-          'role': 'assistant',
-          'content': isGroup ? '$name：${message.content}' : message.content,
-        });
+    final recent = includeRecentHistory
+        ? _recentWithinBudget(conversation, maxCharacters: 3200)
+        : <ChatMessage>[];
+    if (isGroup && recent.isNotEmpty) {
+      final transcript = recent
+          .map((message) {
+            final author = message.isUser
+                ? '旅行者'
+                : (message.authorName ?? '角色');
+            return '$author：${message.content}';
+          })
+          .join('\n');
+      messages.add({'role': 'system', 'content': '最近群聊记录：\n$transcript'});
+    } else {
+      for (final message in recent) {
+        if (message.isUser) {
+          messages.add({'role': 'user', 'content': message.content});
+        } else {
+          messages.add({'role': 'assistant', 'content': message.content});
+        }
       }
     }
-    if (recent.isEmpty || recent.last.content != userText) {
+    if (appendUserMessage &&
+        (isGroup || recent.isEmpty || recent.last.content != userText)) {
       messages.add({'role': 'user', 'content': userText});
     }
     return messages;
+  }
+
+  List<ChatMessage> _recentWithinBudget(
+    ConversationState conversation, {
+    required int maxCharacters,
+  }) {
+    final selected = <ChatMessage>[];
+    var used = 0;
+    for (final message in conversation.messages.reversed) {
+      if (message.sender == 'system') continue;
+      final cost = message.content.length + 28;
+      if (selected.length >= 24 ||
+          (selected.length >= 8 && used + cost > maxCharacters)) {
+        break;
+      }
+      selected.add(message);
+      used += cost;
+    }
+    return selected.reversed.toList();
+  }
+}
+
+class RelevantMemoryRetriever {
+  const RelevantMemoryRetriever();
+
+  String retrieve(String memory, String query, {int maxItems = 6}) {
+    final lines = memory
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return '';
+    final terms = _terms(query);
+    final scored = <({int index, int score, String line})>[];
+    for (var index = 0; index < lines.length; index += 1) {
+      final line = lines[index];
+      var score = index >= lines.length - 4 ? 1 : 0;
+      for (final term in terms) {
+        if (term.length >= 2 && line.toLowerCase().contains(term)) {
+          score += term.length >= 4 ? 4 : 2;
+        }
+      }
+      if (_sameTopicFamily(query, line)) score += 4;
+      if (score > 0) {
+        scored.add((index: index, score: score, line: line));
+      }
+    }
+    scored.sort((a, b) {
+      final byScore = b.score.compareTo(a.score);
+      return byScore != 0 ? byScore : b.index.compareTo(a.index);
+    });
+    final selected = scored.take(maxItems).toList()
+      ..sort((a, b) => a.index.compareTo(b.index));
+    return selected.map((item) => item.line).join('\n');
+  }
+
+  bool hasRelevant(String memory, String query) {
+    if (memory.trim().isEmpty) return false;
+    final result = retrieve(memory, query, maxItems: 2);
+    return result.isNotEmpty;
+  }
+
+  Set<String> _terms(String text) {
+    final normalized = text.toLowerCase().replaceAll(
+      RegExp(r'[^\u4e00-\u9fffa-z0-9]+'),
+      ' ',
+    );
+    final result = <String>{};
+    for (final token in normalized.split(' ')) {
+      if (token.length < 2) continue;
+      if (RegExp(r'^[a-z0-9]+$').hasMatch(token)) {
+        result.add(token);
+        continue;
+      }
+      final maxSize = min(4, token.length);
+      for (var size = 2; size <= maxSize; size += 1) {
+        for (var i = 0; i + size <= token.length; i += 1) {
+          result.add(token.substring(i, i + size));
+        }
+      }
+    }
+    return result;
+  }
+
+  bool _sameTopicFamily(String query, String line) {
+    const families = [
+      ['考试', '学习', '作业', '复习', '学校'],
+      ['项目', '工作', '提交', '截止', 'ddl'],
+      ['睡眠', '睡觉', '失眠', '熬夜', '困'],
+      ['跑步', '运动', '锻炼', '体测'],
+      ['喜欢', '讨厌', '偏好', '想吃', '爱吃'],
+      ['生病', '难受', '医院', '药', '身体'],
+    ];
+    return families.any(
+      (family) =>
+          family.any(query.toLowerCase().contains) &&
+          family.any(line.toLowerCase().contains),
+    );
   }
 }
 
@@ -1658,10 +2177,10 @@ class ResponseGenerator {
     DialoguePlan plan,
   ) {
     final tokens = switch (plan.length) {
-      ReplyLength.veryShort => 80,
-      ReplyLength.short => 130,
-      ReplyLength.medium => 220,
-      ReplyLength.long => 360,
+      ReplyLength.veryShort => 48,
+      ReplyLength.short => 96,
+      ReplyLength.medium => 180,
+      ReplyLength.long => 260,
     };
     return llm.complete(
       settings,
@@ -1694,7 +2213,7 @@ class ResponseValidator {
     var cleaned = clean(draft, conversation, speaker);
     final reason = invalidReason(cleaned, conversation, speaker, plan);
     if (reason == null) {
-      return cleaned;
+      return _enforceWechatShape(cleaned, plan);
     }
     final rewriteMessages = [
       ...messages,
@@ -1713,9 +2232,15 @@ class ResponseValidator {
         maxTokens: min(settings.maxTokens, 160),
       );
       cleaned = clean(rewritten, conversation, speaker);
-      return cleaned.isEmpty ? draft.trim() : cleaned;
+      return _enforceWechatShape(
+        cleaned.isEmpty ? draft.trim() : cleaned,
+        plan,
+      );
     } catch (_) {
-      return cleaned.isEmpty ? draft.trim() : cleaned;
+      return _enforceWechatShape(
+        cleaned.isEmpty ? draft.trim() : cleaned,
+        plan,
+      );
     }
   }
 
@@ -1726,14 +2251,25 @@ class ResponseValidator {
     DialoguePlan plan,
   ) {
     if (text.trim().isEmpty) return '回复为空';
-    if (plan.length != ReplyLength.long && text.length > 120) {
-      return '默认回复超过120字';
+    if (text.length > plan.maxCharacters) {
+      return '回复超过本轮${plan.maxCharacters}字限制';
     }
     if (plan.length == ReplyLength.veryShort && _sentenceCount(text) > 1) {
       return 'very_short只能一句';
     }
     if (plan.length == ReplyLength.short && _sentenceCount(text) > 2) {
       return 'short最多两句';
+    }
+    if (plan.dialogueAct.contains('主动')) {
+      final hour = DateTime.now().hour;
+      if (hour >= 8 &&
+          hour < 18 &&
+          RegExp(r'(晚安|早点睡|做个好梦|明天见)').hasMatch(text)) {
+        return '主动消息和当前时间不符';
+      }
+      if (hour >= 18 && RegExp(r'(早安|早上好|上午好)').hasMatch(text)) {
+        return '主动消息和当前时间不符';
+      }
     }
     final lower = text.toLowerCase();
     const aiTerms = [
@@ -1751,6 +2287,13 @@ class ResponseValidator {
       '总之',
       '希望你能',
       '建议你制定',
+      '可以尝试',
+      '以下是',
+      '首先',
+      '其次',
+      '最后',
+      '很高兴为你',
+      '有什么我可以帮',
     ];
     for (final term in aiTerms) {
       if (lower.contains(term.toLowerCase())) {
@@ -1780,6 +2323,10 @@ class ResponseValidator {
     for (final item in previous) {
       final other = _normalize(item.content);
       if (normalized == other) return '和前文重复';
+      if (min(normalized.length, other.length) >= 4 &&
+          _longestCommonSubstringLength(normalized, other) >= 4) {
+        return '和前文复述了相同短语';
+      }
       if (normalized.length >= 8 &&
           other.length >= 8 &&
           normalized.substring(0, min(8, normalized.length)) ==
@@ -1799,6 +2346,13 @@ class ResponseValidator {
     ];
     var result = _stripKnownSpeakerPrefix(text, candidates);
     result = result
+        .replaceFirst(
+          RegExp(
+            r'^\s*\[(?:\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日\s+\d{1,2}:\d{2})\]\s*',
+          ),
+          '',
+        )
+        .replaceFirst(RegExp(r'^\s*[（(][^）)]{1,30}[）)]\s*'), '')
         .replaceAll(RegExp(r'^["“]|["”]$'), '')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
@@ -1829,6 +2383,94 @@ class ResponseValidator {
     }
     return result;
   }
+
+  String _enforceWechatShape(String text, DialoguePlan plan) {
+    var result = text.trim();
+    const assistantPhrases = [
+      '如果你愿意的话',
+      '我理解你的感受',
+      '希望你能',
+      '总之',
+      '作为一个',
+      '作为AI',
+      '作为 AI',
+    ];
+    for (final phrase in assistantPhrases) {
+      result = result.replaceAll(phrase, '');
+    }
+    result = result
+        .replaceFirst(
+          RegExp(
+            r'^\s*\[(?:\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日\s+\d{1,2}:\d{2})\]\s*',
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'^[\-*•]\s*', multiLine: true), '')
+        .replaceAll(RegExp(r'\n{2,}'), '\n')
+        .trim();
+
+    final sentenceMatches = RegExp(r'[^。！？!?\n]+[。！？!?]?')
+        .allMatches(result)
+        .map((match) => match.group(0)!.trim())
+        .where((sentence) => sentence.isNotEmpty)
+        .take(plan.maxSentences)
+        .toList();
+    if (sentenceMatches.isNotEmpty) {
+      result = sentenceMatches.join(plan.messageCount > 1 ? '\n' : '');
+    }
+    if (!plan.shouldAskBack) {
+      result = result.replaceFirst(RegExp(r'[?？]\s*$'), '。');
+    }
+    if (result.length > plan.maxCharacters) {
+      final candidate = result.substring(0, plan.maxCharacters);
+      final punctuation = [
+        candidate.lastIndexOf('。'),
+        candidate.lastIndexOf('！'),
+        candidate.lastIndexOf('？'),
+        candidate.lastIndexOf('!'),
+        candidate.lastIndexOf('?'),
+      ].reduce(max);
+      if (punctuation >= max(8, plan.maxCharacters ~/ 2)) {
+        result = candidate.substring(0, punctuation + 1);
+      } else {
+        result =
+            '${candidate.substring(0, max(1, plan.maxCharacters - 1)).trimRight()}…';
+      }
+    }
+    result = result
+        .replaceFirst(
+          RegExp(r'(?:反正|所以|因为|但是|不过|然后|而且|其实|只是|要不|比如|包括|至于|况且)\s*$'),
+          '',
+        )
+        .replaceFirst(RegExp(r'[，,；;：:]\s*$'), '')
+        .trim();
+    return result.trim();
+  }
+}
+
+class ReplyBubbleSplitter {
+  const ReplyBubbleSplitter();
+
+  List<String> split(String content, {required int desiredCount}) {
+    final limit = min(3, max(1, desiredCount));
+    var parts = content
+        .split('\n')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (limit == 1) {
+      final joined = parts.join();
+      return joined.isEmpty ? const [] : [joined];
+    }
+    if (parts.length < 2) {
+      parts = RegExp(r'[^。！？!?]+[。！？!?]?')
+          .allMatches(content)
+          .map((match) => match.group(0)!.trim())
+          .where((part) => part.isNotEmpty)
+          .toList();
+    }
+    return parts.take(limit).toList();
+  }
 }
 
 class MemoryStore {
@@ -1836,6 +2478,7 @@ class MemoryStore {
 
   final LlmClient llm;
   final AppSettings settings;
+  final RelevantMemoryRetriever _retriever = const RelevantMemoryRetriever();
 
   Future<String?> maybeUpdate({
     required ConversationState conversation,
@@ -1899,20 +2542,21 @@ ${speaker.name}：${reply.content}
   bool shouldUseMemory(ConversationState conversation, Character speaker) {
     final memory = conversation.memoryMdByCharacter[speaker.id]?.trim() ?? '';
     if (memory.isEmpty) return false;
-    final lastUser = conversation.messages
-        .where((m) => m.isUser)
-        .cast<ChatMessage?>()
-        .lastWhere((m) => m != null, orElse: () => null);
+    final currentUsers = conversation.messages.reversed
+        .where((message) => message.isUser)
+        .take(1);
+    final currentText = currentUsers.isEmpty ? '' : currentUsers.first.content;
+    final previousMessageAt = conversation.messages.length >= 2
+        ? conversation.messages[conversation.messages.length - 2].createdAt
+        : null;
     final longGap =
-        lastUser != null &&
-        DateTime.now().difference(lastUser.createdAt) >
-            const Duration(hours: 20);
-    final asksPast =
-        conversation.messages.isNotEmpty &&
-        RegExp(
-          r'(之前|上次|记得|昨天|前天|那件事|项目|考试|作业|还记得)',
-        ).hasMatch(conversation.messages.last.content);
-    return longGap || asksPast;
+        previousMessageAt != null &&
+        DateTime.now().difference(previousMessageAt) > const Duration(hours: 8);
+    final query = currentText;
+    final asksPast = RegExp(
+      r'(之前|上次|记得|昨天|前天|那件事|项目|考试|作业|还记得)',
+    ).hasMatch(query);
+    return longGap || asksPast || _retriever.hasRelevant(memory, query);
   }
 
   static bool _looksMemoryWorthy(String text) {
@@ -1927,50 +2571,85 @@ class ProactiveMessageScheduler {
 
   ScheduledFollowUp? maybeCreateDuePlan(
     ConversationState conversation,
-    Map<String, Character> characters,
-  ) {
+    Map<String, Character> characters, {
+    DateTime? currentTime,
+  }) {
     if (!conversation.realChatEnabled || conversation.memberIds.isEmpty) {
       return null;
     }
-    final now = DateTime.now();
+    final now = currentTime ?? DateTime.now();
     final nextPingAt = conversation.nextPingAt;
     if (nextPingAt == null || nextPingAt.isAfter(now)) {
       return null;
     }
-    final lastPing = conversation.lastCharacterPingAt;
-    if (lastPing != null &&
-        now.difference(lastPing) <
+    if (_isQuietHour(now)) {
+      conversation.nextPingAt = _nextActiveTime(now);
+      return null;
+    }
+    final lastProactive = conversation.lastProactiveAt;
+    if (lastProactive != null &&
+        now.difference(lastProactive) <
             Duration(minutes: max(45, conversation.cooldownMinutes))) {
       return null;
     }
-    final seed = _unfinishedSeed(conversation);
-    if (seed == null) {
-      conversation.nextPingAt = now.add(
-        Duration(minutes: conversation.cooldownMinutes),
+    final lastUserReply = conversation.lastUserReplyAt;
+    if (lastProactive != null &&
+        (lastUserReply == null || !lastUserReply.isAfter(lastProactive))) {
+      conversation.nextPingAt = _nextActiveTime(
+        now.add(const Duration(hours: 10)),
       );
       return null;
     }
-    final speakerId = _chooseSpeaker(conversation, characters, seed);
+    final unfinished = _unfinishedSeed(conversation);
+    final contextSeed = unfinished ?? _contextSeed(conversation);
+    final speakerId = _chooseSpeaker(
+      conversation,
+      characters,
+      contextSeed ?? '',
+    );
     if (speakerId == null) {
       return null;
     }
+    final speaker = characters[speakerId]!;
+    final seed = contextSeed ?? _characterLifeSeed(speaker, now);
+    final normalizedSeed = _normalizeReplyForSchedule(seed);
+    if (normalizedSeed.isNotEmpty &&
+        normalizedSeed ==
+            _normalizeReplyForSchedule(conversation.lastProactiveTopic)) {
+      conversation.nextPingAt = _nextActiveTime(
+        now.add(const Duration(hours: 4)),
+      );
+      return null;
+    }
+    final reason = unfinished != null
+        ? '真实聊天：跟进旅行者之前留下的具体事情'
+        : contextSeed != null
+        ? '真实聊天：承接最近聊天里的生活线索'
+        : '真实聊天：角色结合当前时间分享自己的日常';
     return ScheduledFollowUp(
       id: 'proactive-${now.microsecondsSinceEpoch}',
       speakerId: speakerId,
       dueAt: now,
-      reason: '真实聊天：基于未完成话题主动跟进',
+      reason: reason,
       prompt: seed,
     );
   }
 
   void scheduleNext(ConversationState conversation) {
     if (!conversation.realChatEnabled) return;
-    final minutes = switch (conversation.pingFrequency) {
-      'low' => max(conversation.cooldownMinutes, 240),
-      'high' => max(conversation.cooldownMinutes, 60),
-      _ => max(conversation.cooldownMinutes, 120),
+    final baseMinutes = switch (conversation.pingFrequency) {
+      'low' => max(conversation.cooldownMinutes, 480),
+      'high' => max(conversation.cooldownMinutes, 120),
+      _ => max(conversation.cooldownMinutes, 240),
     };
-    conversation.nextPingAt = DateTime.now().add(Duration(minutes: minutes));
+    final random = Random(
+      DateTime.now().millisecondsSinceEpoch ^ conversation.id.hashCode,
+    );
+    final jitter = max(20, baseMinutes ~/ 3);
+    final minutes = baseMinutes + random.nextInt(jitter + 1);
+    conversation.nextPingAt = _nextActiveTime(
+      DateTime.now().add(Duration(minutes: minutes)),
+    );
   }
 
   String? _unfinishedSeed(ConversationState conversation) {
@@ -1986,6 +2665,38 @@ class ProactiveMessageScheduler {
     return '旅行者之前提到：${match.group(1)!.trim()}。现在不要尬聊，只自然跟进这件事的结果或状态。';
   }
 
+  String? _contextSeed(ConversationState conversation) {
+    if (conversation.messages.isNotEmpty &&
+        !conversation.messages.last.isUser) {
+      return null;
+    }
+    for (final message in conversation.messages.reversed) {
+      if (!message.isUser) continue;
+      final text = message.content.trim();
+      if (text.length < 5 ||
+          RegExp(
+            r'^(嗯|好|行|哈哈+|哦|ok|OK|晚安|早安|在吗|你在干嘛|忙吗|你呢)[。！？?!~～]?$',
+          ).hasMatch(text)) {
+        continue;
+      }
+      if (_normalizeReplyForSchedule(text) ==
+          _normalizeReplyForSchedule(conversation.lastProactiveTopic)) {
+        continue;
+      }
+      return '旅行者最近聊到：“${_shorten(text, 54)}”。'
+          '从这个真实上下文自然接一句或分享联想到的具体小事；'
+          '不要复述原话，不要问“在吗/干嘛/最近好吗”。';
+    }
+    return null;
+  }
+
+  String _characterLifeSeed(Character speaker, DateTime now) {
+    final profile = CharacterProfile.fromCharacter(speaker);
+    return '现在是${_chatTimeLabel(now)}。${speaker.name}正在过自己的日常。'
+        '结合身份、职责和“${profile.proactiveTendency}”，分享一件此刻刚发生的具体小事或一个自然念头。'
+        '最多两句，不要早安晚安，不要泛泛关心，不要问“在吗/干嘛/最近好吗”，也不要强行帮助旅行者。';
+  }
+
   String? _chooseSpeaker(
     ConversationState conversation,
     Map<String, Character> characters,
@@ -1997,11 +2708,24 @@ class ProactiveMessageScheduler {
         return id;
       }
     }
-    return conversation.memberIds
-            .firstWhere((id) => characters.containsKey(id), orElse: () => '')
-            .isEmpty
-        ? null
-        : conversation.memberIds.firstWhere((id) => characters.containsKey(id));
+    final candidates = conversation.memberIds
+        .where(characters.containsKey)
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) {
+      final aTime = conversation.lastSpokeAtByCharacter[a] ?? DateTime(2000);
+      final bTime = conversation.lastSpokeAtByCharacter[b] ?? DateTime(2000);
+      return aTime.compareTo(bTime);
+    });
+    return candidates.first;
+  }
+
+  bool _isQuietHour(DateTime time) => time.hour < 8 || time.hour >= 23;
+
+  DateTime _nextActiveTime(DateTime time) {
+    if (time.hour >= 8 && time.hour < 23) return time;
+    final day = time.hour >= 23 ? time.add(const Duration(days: 1)) : time;
+    return DateTime(day.year, day.month, day.day, 8, 30);
   }
 }
 
@@ -2036,6 +2760,7 @@ class ChatAgent {
   final ResponseValidator _validator;
   final MemoryStore _memory;
   final GroupChatOrchestrator _group;
+  final ReplyBubbleSplitter _bubbleSplitter = const ReplyBubbleSplitter();
   final Map<String, GroupSpeakerPlan> _lastGroupPlans = {};
 
   Future<ChatMessage> reply(
@@ -2046,7 +2771,15 @@ class ChatAgent {
     if (speakers.isEmpty) {
       throw Exception('当前没有角色接话。');
     }
-    return replyFromSpeaker(conversation, userText, speakers.first);
+    final replies = await replyFromSpeaker(
+      conversation,
+      userText,
+      speakers.first,
+    );
+    if (replies.isEmpty) {
+      throw Exception('角色没有生成可发送的消息。');
+    }
+    return replies.first;
   }
 
   Future<List<Character>> chooseSpeakers(
@@ -2070,7 +2803,7 @@ class ChatAgent {
         .toList();
   }
 
-  Future<ChatMessage> replyFromSpeaker(
+  Future<List<ChatMessage>> replyFromSpeaker(
     ConversationState conversation,
     String userText,
     Character speaker,
@@ -2111,29 +2844,37 @@ class ChatAgent {
       profile: profile,
       plan: plan,
     );
-    return ChatMessage(
-      sender: 'assistant',
-      content: content,
-      createdAt: DateTime.now(),
-      characterId: speaker.id,
-      authorName: speaker.name,
-    );
+    return _bubbleSplitter
+        .split(content, desiredCount: plan.messageCount)
+        .map(
+          (bubble) => ChatMessage(
+            sender: 'assistant',
+            content: bubble,
+            createdAt: DateTime.now(),
+            characterId: speaker.id,
+            authorName: speaker.name,
+          ),
+        )
+        .toList();
   }
 
-  Future<ChatMessage> replyFollowUp(
+  Future<List<ChatMessage>> replyFollowUp(
     ConversationState conversation,
     ScheduledFollowUp followUp,
     Character speaker,
   ) async {
     final profile = CharacterProfile.fromCharacter(speaker);
-    final plan = const DialoguePlan(
+    final plan = DialoguePlan(
       shouldReply: true,
       dialogueAct: '主动跟进未完成话题',
       length: ReplyLength.short,
       emotion: '自然，不尬聊',
-      shouldAskBack: true,
+      shouldAskBack: false,
       maxSentences: 2,
       avoidExplanation: true,
+      maxCharacters: 68,
+      rhythm: '像想起一件具体事情后顺手发来的短消息',
+      messageCount: followUp.id.startsWith('proactive-') ? 1 : 2,
     );
     final messages = _contextBuilder.build(
       conversation: conversation,
@@ -2142,11 +2883,18 @@ class ChatAgent {
       plan: plan,
       userText: followUp.prompt,
       includeMemory: true,
+      appendUserMessage: false,
+      includeRecentHistory: !followUp.id.startsWith('proactive-'),
     );
     messages.add({
       'role': 'system',
       'content':
-          '旅行者此刻没有新消息。你是在合适时间主动跟进，不要提系统、定时、后台、自动。跟进原因：${followUp.reason}\n跟进任务：${followUp.prompt}',
+          '旅行者此刻没有发来新消息，这是你自己想发的一条微信消息。'
+          '不要提系统、定时、后台、自动或任务。不要用“在吗”“干嘛呢”“最近好吗”开场。'
+          '必须先说一个自己此刻刚发生的新细节，不能写括号动作旁白，不能只向旅行者泛泛提问；'
+          '如果旅行者最后一句已经得到回应，就不要再次回应同一个请求，改发新的角色日常或真正的后续结果。\n'
+          '发消息的内在缘由：${followUp.reason}\n'
+          '本轮生活线索：${followUp.prompt}',
     });
     final draft = await _generator.generate(messages, plan);
     final content = await _validator.validateAndRewriteIfNeeded(
@@ -2157,13 +2905,18 @@ class ChatAgent {
       profile: profile,
       plan: plan,
     );
-    return ChatMessage(
-      sender: 'assistant',
-      content: content,
-      createdAt: DateTime.now(),
-      characterId: speaker.id,
-      authorName: speaker.name,
-    );
+    return _bubbleSplitter
+        .split(content, desiredCount: plan.messageCount)
+        .map(
+          (bubble) => ChatMessage(
+            sender: 'assistant',
+            content: bubble,
+            createdAt: DateTime.now(),
+            characterId: speaker.id,
+            authorName: speaker.name,
+          ),
+        )
+        .toList();
   }
 
   Future<String?> maybeUpdateMemory(
@@ -2256,6 +3009,10 @@ class ChatAgent {
       shouldAskBack: base.shouldAskBack,
       maxSentences: groupPlan.length == ReplyLength.veryShort ? 1 : 2,
       avoidExplanation: true,
+      maxCharacters: groupPlan.length == ReplyLength.veryShort ? 32 : 68,
+      rhythm: groupPlan.length == ReplyLength.veryShort
+          ? '短短插一句，不解释'
+          : '接住上一位的话，不重复旅行者原话',
     );
   }
 
@@ -2298,6 +3055,33 @@ String _recentText(ConversationState conversation, int limit) {
       .join('\n');
 }
 
+String _chatTimeLabel(DateTime time) {
+  final period = switch (time.hour) {
+    < 6 => '深夜',
+    < 9 => '早晨',
+    < 12 => '上午',
+    < 14 => '中午',
+    < 18 => '下午',
+    < 23 => '晚上',
+    _ => '深夜',
+  };
+  final minute = time.minute.toString().padLeft(2, '0');
+  return '${time.month}月${time.day}日$period ${time.hour}:$minute';
+}
+
+String _normalizeReplyForSchedule(String text) {
+  return text
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll(RegExp(r'[，。！？、,.!?：:“”"‘’\-~～…]'), '')
+      .trim();
+}
+
+String _shorten(String text, int maxLength) {
+  if (text.length <= maxLength) return text;
+  return '${text.substring(0, max(1, maxLength - 1)).trimRight()}…';
+}
+
 bool _lineStartsWithSpeaker(String line, Character character) {
   final trimmed = line.trim();
   for (final name in [character.name, character.enName, character.title]) {
@@ -2330,6 +3114,22 @@ String _normalize(String text) {
   return text
       .replaceAll(RegExp(r'\\s+'), '')
       .replaceAll(RegExp(r'[，。！？!?~～,.]'), '');
+}
+
+int _longestCommonSubstringLength(String first, String second) {
+  var previous = List<int>.filled(second.length + 1, 0);
+  var longest = 0;
+  for (var i = 1; i <= first.length; i += 1) {
+    final current = List<int>.filled(second.length + 1, 0);
+    for (var j = 1; j <= second.length; j += 1) {
+      if (first.codeUnitAt(i - 1) == second.codeUnitAt(j - 1)) {
+        current[j] = previous[j - 1] + 1;
+        longest = max(longest, current[j]);
+      }
+    }
+    previous = current;
+  }
+  return longest;
 }
 
 class TeyvatChatApp extends StatefulWidget {
@@ -2415,7 +3215,18 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
     setState(() {
       _settings = settings;
       _characterById = byId;
-      _conversations = conversations;
+      if (_conversations.isEmpty) {
+        _conversations = conversations;
+      } else {
+        for (final entry in conversations.entries) {
+          final local = _conversations[entry.key];
+          if (local == null) {
+            _conversations[entry.key] = entry.value;
+          } else if (!_busyConversations.contains(entry.key)) {
+            _adoptConversationState(local, entry.value);
+          }
+        }
+      }
       _loading = false;
     });
     await _store.saveConversations(_conversations);
@@ -2515,6 +3326,40 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
       conversation.memoryMdByCharacter.removeWhere(
         (key, value) => !characters.containsKey(key),
       );
+      conversation.lastSpokeAtByCharacter.removeWhere(
+        (key, value) => !characters.containsKey(key),
+      );
+    }
+  }
+
+  Future<void> _mergeExternalConversationUpdates() async {
+    final external = await _store.loadConversations();
+    var changed = false;
+    for (final entry in external.entries) {
+      if (_busyConversations.contains(entry.key)) {
+        continue;
+      }
+      final local = _conversations[entry.key];
+      if (local == null) {
+        _conversations[entry.key] = entry.value;
+        changed = true;
+        continue;
+      }
+      final source = entry.value;
+      final hasNewerMessages =
+          source.messages.length > local.messages.length ||
+          (source.messages.isNotEmpty &&
+              (local.messages.isEmpty ||
+                  source.messages.last.createdAt.isAfter(
+                    local.messages.last.createdAt,
+                  )));
+      if (source.updatedAt.isAfter(local.updatedAt) || hasNewerMessages) {
+        _adoptConversationState(local, source);
+        changed = true;
+      }
+    }
+    if (changed) {
+      _notifyChanged();
     }
   }
 
@@ -2556,9 +3401,7 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
     conversation.updatedAt = now;
     conversation.lastUserReplyAt = now;
     if (conversation.realChatEnabled) {
-      conversation.nextPingAt = now.add(
-        Duration(minutes: max(conversation.cooldownMinutes, 60)),
-      );
+      const ProactiveMessageScheduler().scheduleNext(conversation);
     }
     _busyConversations.add(conversation.id);
     await _store.saveConversations(_conversations);
@@ -2602,7 +3445,7 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
           _notifyChanged();
         }
         final speakerStartedAt = DateTime.now();
-        final reply = await agent.replyFromSpeaker(
+        final replies = await agent.replyFromSpeaker(
           conversation,
           userText,
           speaker,
@@ -2613,22 +3456,42 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
             const Duration(milliseconds: 1500),
           );
         }
-        if (!_isNearDuplicateReply(conversation, reply)) {
+        final acceptedReplies = <ChatMessage>[];
+        for (final reply in replies) {
+          if (_isNearDuplicateReply(conversation, reply)) {
+            continue;
+          }
+          if (acceptedReplies.isNotEmpty) {
+            await Future.delayed(
+              Duration(milliseconds: 420 + _random.nextInt(481)),
+            );
+          }
           conversation.messages.add(reply);
+          acceptedReplies.add(reply);
           conversation.updatedAt = DateTime.now();
           conversation.lastCharacterPingAt = DateTime.now();
+          conversation.lastSpokeAtByCharacter[speaker.id] = DateTime.now();
+          await _store.saveConversations(_conversations);
+          _notifyChanged();
+        }
+        if (acceptedReplies.isNotEmpty) {
           if (conversation.realChatEnabled) {
             const ProactiveMessageScheduler().scheduleNext(conversation);
           }
-          await _store.saveConversations(_conversations);
-          _notifyChanged();
+          final combinedReply = ChatMessage(
+            sender: 'assistant',
+            content: acceptedReplies.map((reply) => reply.content).join('\n'),
+            createdAt: acceptedReplies.last.createdAt,
+            characterId: speaker.id,
+            authorName: speaker.name,
+          );
           try {
             await _maybeUpdateConversationState(
               agent,
               conversation,
               speaker,
               userText,
-              reply,
+              combinedReply,
             );
             await _store.saveConversations(_conversations);
           } catch (_) {}
@@ -2710,6 +3573,7 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
     if (_loading || _settings.apiKey.trim().isEmpty) {
       return;
     }
+    await _mergeExternalConversationUpdates();
     final now = DateTime.now();
     for (final conversation in _conversations.values) {
       if (_busyConversations.contains(conversation.id) ||
@@ -2721,12 +3585,14 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
               .where((item) => !item.dueAt.isAfter(now))
               .toList()
             ..sort((a, b) => a.dueAt.compareTo(b.dueAt));
-      final proactive = const ProactiveMessageScheduler().maybeCreateDuePlan(
-        conversation,
-        _characterById,
-      );
-      if (proactive != null) {
-        dueItems.add(proactive);
+      if (dueItems.isEmpty) {
+        final proactive = const ProactiveMessageScheduler().maybeCreateDuePlan(
+          conversation,
+          _characterById,
+        );
+        if (proactive != null) {
+          dueItems.add(proactive);
+        }
       }
       if (dueItems.isEmpty) {
         continue;
@@ -2765,7 +3631,7 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
           _notifyChanged();
         }
         final speakerStartedAt = DateTime.now();
-        final reply = await agent.replyFollowUp(
+        final replies = await agent.replyFollowUp(
           conversation,
           followUp,
           speaker,
@@ -2776,18 +3642,46 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
             const Duration(milliseconds: 1500),
           );
         }
-        if (!_isNearDuplicateReply(conversation, reply)) {
+        final acceptedReplies = <ChatMessage>[];
+        for (final reply in replies) {
+          if (_isNearDuplicateReply(conversation, reply)) {
+            continue;
+          }
+          if (acceptedReplies.isNotEmpty) {
+            await Future.delayed(
+              Duration(milliseconds: 420 + _random.nextInt(481)),
+            );
+          }
           conversation.messages.add(reply);
+          acceptedReplies.add(reply);
           conversation.updatedAt = DateTime.now();
+          conversation.lastCharacterPingAt = DateTime.now();
+          conversation.lastSpokeAtByCharacter[speaker.id] = DateTime.now();
           await _store.saveConversations(_conversations);
           _notifyChanged();
+        }
+        if (acceptedReplies.isNotEmpty) {
+          if (followUp.id.startsWith('proactive-')) {
+            conversation.lastProactiveAt = DateTime.now();
+            conversation.lastProactiveTopic = followUp.prompt;
+          }
+          if (conversation.realChatEnabled) {
+            const ProactiveMessageScheduler().scheduleNext(conversation);
+          }
+          final combinedReply = ChatMessage(
+            sender: 'assistant',
+            content: acceptedReplies.map((reply) => reply.content).join('\n'),
+            createdAt: acceptedReplies.last.createdAt,
+            characterId: speaker.id,
+            authorName: speaker.name,
+          );
           try {
             await _maybeUpdateConversationState(
               agent,
               conversation,
               speaker,
               followUp.prompt,
-              reply,
+              combinedReply,
             );
             await _store.saveConversations(_conversations);
           } catch (_) {}
@@ -2824,6 +3718,14 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
         return true;
       }
       final minLength = min(other.length, normalized.length);
+      if (minLength >= 4 &&
+          (other.contains(normalized) || normalized.contains(other))) {
+        return true;
+      }
+      if (minLength >= 4 &&
+          _longestCommonSubstringLength(other, normalized) >= 4) {
+        return true;
+      }
       if (minLength >= 8 &&
           (other.startsWith(normalized.substring(0, minLength)) ||
               normalized.startsWith(other.substring(0, minLength)))) {
@@ -2916,15 +3818,12 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
 
   Future<void> _toggleRealChat(ConversationState conversation) async {
     conversation.realChatEnabled = !conversation.realChatEnabled;
-    final now = DateTime.now();
     if (conversation.realChatEnabled) {
       conversation.cooldownMinutes = max(
         conversation.cooldownMinutes,
         _settings.proactiveCooldownMinutes,
       );
-      conversation.nextPingAt = now.add(
-        Duration(minutes: max(conversation.cooldownMinutes, 60)),
-      );
+      const ProactiveMessageScheduler().scheduleNext(conversation);
     } else {
       conversation.nextPingAt = null;
     }
@@ -3788,7 +4687,7 @@ class MePage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        const _MeSection(
+        _MeSection(
           children: [
             _MeTile(
               icon: Icons.info_outline,
@@ -3928,23 +4827,29 @@ class _WelcomeSetupPageState extends State<WelcomeSetupPage> {
 
   Future<void> _testApi() async {
     if (_apiKey.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
+      await _showApiTestDialog(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请先填写 API Key')));
+        success: false,
+        message: '请先填写 API Key。',
+      );
       return;
     }
     setState(() => _testingApi = true);
     try {
       await LlmClient(HttpTextClient()).testConnection(_currentSettings());
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await _showApiTestDialog(
         context,
-      ).showSnackBar(const SnackBar(content: Text('API 测试成功，可以正常调用。')));
+        success: true,
+        message: '连接成功，当前接口地址、API Key 和模型均可正常调用。',
+      );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await _showApiTestDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text(_friendlyLocalError(error))));
+        success: false,
+        message: _friendlyLocalError(error),
+      );
     } finally {
       if (mounted) setState(() => _testingApi = false);
     }
@@ -5258,23 +6163,29 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
   Future<void> _testApi() async {
     if (_apiKey.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
+      await _showApiTestDialog(
         context,
-      ).showSnackBar(const SnackBar(content: Text('请先填写 API Key')));
+        success: false,
+        message: '请先填写 API Key。',
+      );
       return;
     }
     setState(() => _testingApi = true);
     try {
       await LlmClient(HttpTextClient()).testConnection(_currentSettings());
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await _showApiTestDialog(
         context,
-      ).showSnackBar(const SnackBar(content: Text('API 测试成功，可以正常调用。')));
+        success: true,
+        message: '连接成功，当前接口地址、API Key 和模型均可正常调用。',
+      );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await _showApiTestDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text(_friendlyLocalError(error))));
+        success: false,
+        message: _friendlyLocalError(error),
+      );
     } finally {
       if (mounted) setState(() => _testingApi = false);
     }

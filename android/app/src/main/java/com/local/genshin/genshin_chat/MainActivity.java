@@ -2,8 +2,11 @@ package com.local.genshin.genshin_chat;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.pm.PackageInfoCompat;
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.MethodChannel;
@@ -17,6 +20,14 @@ public class MainActivity extends FlutterActivity {
                 .setMethodCallHandler((call, result) -> {
                     if ("getFilesDir".equals(call.method)) {
                         result.success(getFilesDir().getAbsolutePath());
+                    } else if ("getAppVersion".equals(call.method)) {
+                        try {
+                            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+                            long buildNumber = PackageInfoCompat.getLongVersionCode(info);
+                            result.success(info.versionName + "+" + buildNumber);
+                        } catch (PackageManager.NameNotFoundException error) {
+                            result.error("VERSION_UNAVAILABLE", "无法读取应用版本", null);
+                        }
                     } else if ("saveApiKey".equals(call.method)) {
                         String apiKey = call.arguments instanceof String ? (String) call.arguments : "";
                         securePrefs().edit().putString("api_key", apiKey).apply();

@@ -6,7 +6,7 @@
 
 ## 下载
 
-[一键下载 Android APK](https://github.com/uinaqx/genshin_chat/raw/main/releases/teyvat-chat-release.apk)
+[一键下载 Android APK](https://github.com/uinaqx/Genshin_chat/raw/main/releases/teyvat-chat-release.apk)
 
 当前仓库内提供已构建好的 APK：`releases/teyvat-chat-release.apk`。
 
@@ -35,6 +35,7 @@
 - `ResponseValidator`：过滤长篇、AI 助手腔、角色名前缀、群聊发言人错乱
 - `GroupChatOrchestrator`：决定群聊本轮谁说话、说几个人、按什么顺序
 - `MemoryStore`：维护短期上下文、摘要和角色长期记忆
+- `RelevantMemoryRetriever`：按当前话题筛选相关 MemoryMD 片段，减少无关记忆和 Token
 - `ProactiveMessageScheduler`：根据未完成话题安排主动跟进
 - `LocalStore`：保存本地设置与聊天记录
 - `LiveChatWorker`：Android 后台任务，用于补发到期跟进消息
@@ -87,7 +88,34 @@ tools/
 
 通讯录页面只展示角色来源和简短性格说明。完整 SoulMD、说话风格示例、长期记忆等后台资料不会在玩家界面直接显示。
 
+## 开源参考与设计借鉴
+
+- [SillyTavern](https://github.com/SillyTavern/SillyTavern)：参考角色卡、群聊自然激活、角色发言倾向和分层提示词思路。
+- [RisuAI](https://github.com/kwaroran/Risuai)：参考近期记忆与相关记忆混合、上下文压缩和长期角色聊天设计。
+- [ChatterUI](https://github.com/Vali-98/ChatterUI)：参考按上下文预算从最新消息向前装填、保留消息时间信息的移动端实现。
+- [sillytavern-character-memory](https://github.com/bal-spec/sillytavern-character-memory)：参考结构化记忆提取、按当前话题检索相关记忆的思路。
+
+本项目只借鉴公开架构与算法思想，代码按当前 Flutter/Android 架构独立实现。
+
 ## 版本更新
+
+### 2.0.0+20
+
+- 重构上下文拼装：按字符预算从最新消息向前选取历史，并向角色提供自然的本地时间感。
+- 新增相关记忆检索：MemoryMD 不再整份注入，只选取与当前话题相关的片段。
+- 重写日常对话规划：区分知识问题、日常询问、情绪表达、招呼和普通闲聊。
+- 增加微信短回复硬限制：模型重写失败时，本地仍会限制句数和字数并清理典型 AI 助手腔。
+- 单聊支持单轮连续发送 1 至 3 条独立消息气泡，规划器决定数量并以自然间隔逐条送达。
+- 重构真实聊天调度：支持安静时段、未回复不连发、主动消息主题去重、上下文跟进和角色日常分享。
+- 主动消息增加短语级重复检测、早晚语义校验、括号旁白清理与最多两次自动换题重写。
+- 修复前后台会话同步：后台 Worker 写入的新消息会合并到当前聊天对象并立即显示。
+- 前台与后台改用同一文件锁、临时文件替换和消息并集合并，避免主动消息与用户新消息同时保存时互相覆盖。
+- 群聊加入角色最近发言时间和发言倾向，减少同一角色连续抢话和排队式回复。
+- Android 后台任务同步使用新的时间感知主动聊天与短消息规则。
+- OpenAI 兼容接口会识别 DeepSeek 等推理模型并自动预留推理 Token，截断结果不会作为正文发送。
+- “一键测试 API”改为前台可见的成功/失败弹窗，不再被设置面板遮挡。
+- “我的”页面改为读取安装包的真实版本号，后续发布无需再手工同步。
+- 新增自动化测试，覆盖相关记忆、日常短回复、强制长度限制、主动消息防刷屏和前后台并发保存。
 
 ### 1.9.1+19
 

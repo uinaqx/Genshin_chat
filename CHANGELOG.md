@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.0+20
+
+- Rebuilt context assembly around a bounded recent-history budget with local timestamps.
+- Added relevant MemoryMD retrieval so only topic-related memory fragments are injected.
+- Added time-aware dialogue planning with stricter WeChat-style sentence and character limits.
+- Added deterministic local reply shaping as a fallback when model rewriting is unavailable.
+- Added planner-controlled one-to-three-bubble private-chat replies with natural delivery spacing.
+- Reworked proactive chat with quiet hours, topic deduplication, no-repeat behavior when the user has not replied, contextual follow-ups, and character-life messages.
+- Added phrase-level duplicate checks, time-of-day validation, stage-direction cleanup, and bounded topic rewrites for proactive messages.
+- Merged Android worker writes back into live in-memory conversations so background messages appear without losing state.
+- Added shared foreground/background file locking, atomic replacement, and message reconciliation to prevent concurrent saves from overwriting new chat bubbles.
+- Added per-character speaking recency to improve group speaker variety and reduce queue-like replies.
+- Updated the Android background worker to use the same proactive scheduling and short-message rules.
+- Added reasoning-model token budgets and truncation rejection for OpenAI-compatible DeepSeek-style responses.
+- Replaced hidden API test snackbars with visible success and failure dialogs.
+- Read the displayed app version from Android package metadata to prevent stale version labels.
+- Added automated tests for memory retrieval, daily-chat planning, hard reply limits, proactive anti-spam behavior, and concurrent foreground/background saves.
+
 ## 1.9.1+19
 
 - Stopped writing LLM failure notices into the chat as system messages; failures now only show a transient in-app toast.

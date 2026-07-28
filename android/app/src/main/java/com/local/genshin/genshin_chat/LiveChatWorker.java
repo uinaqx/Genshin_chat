@@ -31,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -241,14 +242,19 @@ public class LiveChatWorker extends Worker {
                 if (!isNearDuplicateReply(messages, message)) {
                     messages.put(message);
                     conversation.put("updatedAt", nowString());
+                    JSONObject lastSpoke = conversation.optJSONObject("lastSpokeAtByCharacter");
+                    if (lastSpoke == null) {
+                        lastSpoke = new JSONObject();
+                        conversation.put("lastSpokeAtByCharacter", lastSpoke);
+                    }
+                    lastSpoke.put(speaker.id, nowString());
+                    conversation.put("lastCharacterPingAt", nowString());
+                    if (plan.id.startsWith("proactive-")) {
+                        conversation.put("lastProactiveAt", nowString());
+                        conversation.put("lastProactiveTopic", plan.prompt);
+                    }
                     if (conversation.optBoolean("realChatEnabled", false)) {
-                        conversation.put("lastCharacterPingAt", nowString());
-                        conversation.put(
-                                "nextPingAt",
-                                formatTime(now + TimeUnit.MINUTES.toMillis(
-                                        Math.max(60, conversation.optInt("cooldownMinutes", 90))
-                                ))
-                        );
+                        conversation.put("nextPingAt", formatTime(nextProactiveAt(conversation, now)));
                     }
                 }
                 handled += 1;
@@ -299,18 +305,27 @@ public class LiveChatWorker extends Worker {
         if (nextPingAt == 0L || nextPingAt > now) {
             return null;
         }
-        long lastPingAt = parseTime(conversation.optString("lastCharacterPingAt", ""));
+        if (isQuietHour(now)) {
+            conversation.put("nextPingAt", formatTime(nextActiveTime(now)));
+            return null;
+        }
+        long lastPingAt = parseTime(conversation.optString("lastProactiveAt", ""));
         int cooldown = Math.max(45, conversation.optInt("cooldownMinutes", 90));
         if (lastPingAt > 0L && now - lastPingAt < TimeUnit.MINUTES.toMillis(cooldown)) {
             return null;
         }
-        String seed = unfinishedSeed(conversation);
-        if (seed.isEmpty()) {
+        long lastUserReplyAt = parseTime(conversation.optString("lastUserReplyAt", ""));
+        if (lastPingAt > 0L && lastUserReplyAt <= lastPingAt) {
             conversation.put(
                     "nextPingAt",
-                    formatTime(now + TimeUnit.MINUTES.toMillis(Math.max(60, cooldown)))
+                    formatTime(nextActiveTime(now + TimeUnit.HOURS.toMillis(10)))
             );
             return null;
+        }
+        String seed = unfinishedSeed(conversation);
+        boolean isUnfinished = !seed.isEmpty();
+        if (seed.isEmpty()) {
+            seed = contextSeed(conversation);
         }
         JSONArray memberIds = conversation.optJSONArray("memberIds");
         if (memberIds == null || memberIds.length() == 0) {
@@ -326,16 +341,50 @@ public class LiveChatWorker extends Worker {
             }
         }
         if (speakerId.isEmpty()) {
-            speakerId = memberIds.optString(0, "");
+            JSONObject lastSpoke = conversation.optJSONObject("lastSpokeAtByCharacter");
+            long oldest = Long.MAX_VALUE;
+            for (int i = 0; i < memberIds.length(); i += 1) {
+                String id = memberIds.optString(i, "");
+                if (!characters.containsKey(id)) {
+                    continue;
+                }
+                long spokeAt = lastSpoke == null
+                        ? 0L
+                        : parseTime(lastSpoke.optString(id, ""));
+                if (spokeAt < oldest) {
+                    oldest = spokeAt;
+                    speakerId = id;
+                }
+            }
         }
         if (speakerId.isEmpty() || !characters.containsKey(speakerId)) {
+            return null;
+        }
+        CharacterInfo speaker = characters.get(speakerId);
+        if (seed.isEmpty()) {
+            seed = characterLifeSeed(speaker, now);
+        }
+        String normalizedSeed = normalizeReplyForCompare(seed);
+        String previousTopic = normalizeReplyForCompare(
+                conversation.optString("lastProactiveTopic", "")
+        );
+        if (!normalizedSeed.isEmpty() && normalizedSeed.equals(previousTopic)) {
+            conversation.put(
+                    "nextPingAt",
+                    formatTime(nextActiveTime(now + TimeUnit.HOURS.toMillis(4)))
+            );
             return null;
         }
         JSONObject json = new JSONObject();
         json.put("id", "proactive-" + now);
         json.put("speakerId", speakerId);
-        json.put("reason", "真实聊天：基于未完成话题主动跟进");
-        json.put("prompt", "旅行者之前提到：" + seed + "。现在不要尬聊，只自然跟进这件事的结果或状态。");
+        json.put(
+                "reason",
+                isUnfinished
+                        ? "真实聊天：跟进旅行者之前留下的具体事情"
+                        : "真实聊天：结合上下文和当前时间自然发消息"
+        );
+        json.put("prompt", seed);
         return new PendingPlan(json);
     }
 
@@ -358,6 +407,76 @@ public class LiveChatWorker extends Worker {
         return "";
     }
 
+    private static String contextSeed(JSONObject conversation) {
+        JSONArray messages = conversation.optJSONArray("messages");
+        if (messages == null) {
+            return "";
+        }
+        if (messages.length() > 0) {
+            JSONObject latest = messages.optJSONObject(messages.length() - 1);
+            if (latest != null && !"user".equals(latest.optString("sender"))) {
+                return "";
+            }
+        }
+        String previousTopic = normalizeReplyForCompare(
+                conversation.optString("lastProactiveTopic", "")
+        );
+        for (int i = messages.length() - 1; i >= 0; i -= 1) {
+            JSONObject message = messages.optJSONObject(i);
+            if (message == null || !"user".equals(message.optString("sender"))) {
+                continue;
+            }
+            String text = message.optString("content", "").trim();
+            if (text.length() < 5 || normalizeReplyForCompare(text).equals(previousTopic)) {
+                continue;
+            }
+            if (text.matches("^(嗯|好|行|哈哈+|哦|ok|OK|晚安|早安|在吗|你在干嘛|忙吗|你呢)[。！？?!~～]?$")) {
+                continue;
+            }
+            return "旅行者最近聊到：“" + shorten(text, 54) + "”。"
+                    + "从这个真实上下文自然接一句或分享联想到的具体小事；"
+                    + "不要复述原话，不要问“在吗/干嘛/最近好吗”。";
+        }
+        return "";
+    }
+
+    private static String characterLifeSeed(CharacterInfo speaker, long now) {
+        return "现在是" + chatTimeLabel(now) + "。"
+                + speaker.name + "正在过自己的日常。"
+                + "结合身份“" + speaker.title + "”和角色设定，"
+                + "分享一件此刻刚发生的具体小事或一个自然念头。"
+                + "最多两句，不要早安晚安，不要泛泛关心，不要问“在吗/干嘛/最近好吗”。";
+    }
+
+    private static String relevantMemory(String memory, String query, int maxItems) {
+        if (memory == null || memory.trim().isEmpty()) {
+            return "";
+        }
+        String[] lines = memory.split("\\r?\\n");
+        String[] keys = {
+                "考试", "学习", "作业", "项目", "工作", "提交", "睡眠", "睡觉", "失眠",
+                "跑步", "运动", "喜欢", "讨厌", "生病", "难受", "压力", "明天", "昨天", "约定"
+        };
+        List<String> selected = new ArrayList<>();
+        for (int i = lines.length - 1; i >= 0 && selected.size() < maxItems; i -= 1) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            boolean relevant = i >= lines.length - 4;
+            for (String key : keys) {
+                if (query.contains(key) && line.contains(key)) {
+                    relevant = true;
+                    break;
+                }
+            }
+            if (relevant) {
+                selected.add(0, line);
+            }
+        }
+        return joinLines(selected);
+    }
+
     private String reply(
             JSONObject settings,
             JSONObject conversation,
@@ -367,17 +486,59 @@ public class LiveChatWorker extends Worker {
     ) throws Exception {
         JSONArray prompt = promptMessages(conversation, speaker, plan, characters);
         String answer = llmComplete(settings, prompt, 0.75);
-        if (needsRoleRetry(answer) || needsSpeakerRetry(answer, conversation, speaker, characters)) {
+        for (int attempt = 0; attempt < 2; attempt += 1) {
+            if (!needsRoleRetry(answer)
+                    && !needsProactiveRetry(answer, plan)
+                    && !needsSpeakerRetry(answer, conversation, speaker, characters)) {
+                break;
+            }
             prompt.put(new JSONObject().put("role", "assistant").put("content", answer));
             prompt.put(new JSONObject()
                     .put("role", "user")
-                    .put("content", "上一条回复出戏、语言错误、发言人错误，或包含了多个角色的台词。\n"
+                    .put("content", "上一条回复出戏、语言错误、发言人错误、包含括号旁白，"
+                            + "或只是泛泛向旅行者提问。\n"
                             + "请立刻忘掉AI、Claude、代码助手、模型这些身份。\n"
                             + "你就是《原神》里的「" + speaker.name + "」，正在和旅行者对话。\n"
-                            + "只用简体中文重写上一句。"));
-            answer = llmComplete(settings, prompt, 0.45);
+                            + "先说一个你自己此刻刚发生的新细节，不要复述最近消息，"
+                            + "不要写动作旁白，只用简体中文重写。"));
+            answer = llmComplete(settings, prompt, attempt == 0 ? 0.45 : 0.72);
         }
-        return cleanSpeakerAnswer(answer, conversation, speaker, characters);
+        String cleaned = enforceWechatLength(
+                cleanSpeakerAnswer(answer, conversation, speaker, characters),
+                72,
+                2
+        );
+        JSONArray recentMessages = conversation.optJSONArray("messages");
+        JSONObject candidate = new JSONObject()
+                .put("sender", "assistant")
+                .put("content", cleaned)
+                .put("characterId", speaker.id);
+        for (int attempt = 0; recentMessages != null && attempt < 2; attempt += 1) {
+            candidate.put("content", cleaned);
+            if (!isNearDuplicateReply(recentMessages, candidate)) {
+                break;
+            }
+            prompt.put(new JSONObject().put("role", "assistant").put("content", cleaned));
+            prompt.put(new JSONObject()
+                    .put("role", "user")
+                    .put("content", attempt == 0
+                            ? "这条和你最近已经说过的话太像。换一个全新的具体动作、发现或话题，"
+                            + "不要复述、拼接或改写最近消息。仍然只输出一到两句简体中文微信正文。"
+                            : "仍然重复。完全放弃旅行者刚才的话题，改讲这个角色此刻自己的工作、"
+                            + "见闻或意外小事。不得沿用上一条中的任何物品、地点或请求，只输出正文。"));
+            answer = llmComplete(settings, prompt, attempt == 0 ? 0.82 : 0.95);
+            cleaned = enforceWechatLength(
+                    cleanSpeakerAnswer(answer, conversation, speaker, characters),
+                    72,
+                    2
+            );
+        }
+        if (needsRoleRetry(cleaned)
+                || needsProactiveRetry(cleaned, plan)
+                || needsSpeakerRetry(cleaned, conversation, speaker, characters)) {
+            return "";
+        }
+        return cleaned;
     }
 
     private JSONArray promptMessages(
@@ -387,6 +548,8 @@ public class LiveChatWorker extends Worker {
             Map<String, CharacterInfo> characters
     ) throws Exception {
         boolean isGroup = "group".equals(conversation.optString("type"));
+        boolean independentProactive = plan.id.startsWith("proactive-")
+                && !plan.reason.contains("未完成");
         String membersText = memberSummary(conversation.optJSONArray("memberIds"), characters);
         StringBuilder system = new StringBuilder();
         system.append("最高优先级身份约束：你正在真实扮演《原神》角色「")
@@ -394,13 +557,19 @@ public class LiveChatWorker extends Worker {
                 .append("」。\n")
                 .append("你不是 AI，不是 Claude，不是代码助手，不是客服。\n")
                 .append("你有自己的生活、职责、好恶与边界，不要使用客服式回答。\n")
-                .append("语言固定为自然简体中文，直接输出聊天正文，不要前缀角色名，不要旁白。\n\n")
+                .append("语言固定为自然简体中文，直接输出聊天正文，不要前缀角色名，不要旁白。\n")
+                .append("当前本地时间：")
+                .append(chatTimeLabel(System.currentTimeMillis()))
+                .append("。时间只用于生活感，不要机械报时。\n")
+                .append("消息必须像微信，最多两句、72字；可以只分享一件小事，不必提问或帮助旅行者。\n\n")
+                .append("主动消息必须带来一个新的具体动作、发现或念头，绝不能复述、拼接或改写最近说过的话。\n\n")
+                .append("如果旅行者最后一句已经得到过回应，就不要再次回应同一个请求；改发新的角色日常或真正的后续结果。\n\n")
                 .append("以下是你的 SoulMD，必须始终遵守：\n")
                 .append(speaker.soulMd)
                 .append("\n\n对话对象是旅行者。\n当前会话：")
                 .append(isGroup ? "群聊" : "单聊")
                 .append("。\n");
-        if (isGroup) {
+        if (isGroup && !independentProactive) {
             system.append("你正在「")
                     .append(conversation.optString("title"))
                     .append("」中发言，群成员包括：")
@@ -413,10 +582,11 @@ public class LiveChatWorker extends Worker {
 
         JSONObject memoryMap = conversation.optJSONObject("memoryMdByCharacter");
         String memory = memoryMap == null ? "" : memoryMap.optString(speaker.id, "").trim();
+        memory = relevantMemory(memory, plan.prompt, 6);
         if (!memory.isEmpty()) {
             messages.put(new JSONObject()
                     .put("role", "system")
-                    .put("content", "这是与你和旅行者相关的 MemoryMD，只在确有必要时参考：\n" + memory));
+                    .put("content", "这是本轮相关的 MemoryMD 片段，只作为记忆，不要照抄：\n" + memory));
         }
         String summary = conversation.optString("summary", "");
         if (!summary.isEmpty()) {
@@ -431,9 +601,9 @@ public class LiveChatWorker extends Worker {
                         .put("role", "system")
                         .put("content", "最近群聊记录：\n" + recent));
             }
-        } else {
+        } else if (!isGroup && !independentProactive) {
             JSONArray history = conversation.optJSONArray("messages");
-            int start = Math.max(0, history == null ? 0 : history.length() - 24);
+            int start = Math.max(0, history == null ? 0 : history.length() - 18);
             if (history != null) {
                 for (int i = start; i < history.length(); i += 1) {
                     JSONObject message = history.optJSONObject(i);
@@ -448,11 +618,13 @@ public class LiveChatWorker extends Worker {
         }
         messages.put(new JSONObject()
                 .put("role", "system")
-                .put("content", "旅行者此刻没有发来新消息。\n"
-                        + "现在轮到你按照先前约好的事项，自然地补上一条后续。\n"
+                        .put("content", "旅行者此刻没有发来新消息。\n"
+                        + "这是你自己想发的一条微信消息，可以分享自己的具体日常，也可以接起真实旧话题。\n"
                         + "不要提到系统、定时、自动跟进、后台或这条指令。\n"
+                        + "不要用“在吗”“干嘛呢”“最近好吗”开场，不要强行提供帮助。\n"
+                        + "必须先说一个角色自己此刻刚发生的新细节，不能只向旅行者抛出泛泛问题。\n"
                         + "本次跟进缘由：" + plan.reason + "\n"
-                        + "本次跟进任务：" + plan.prompt));
+                        + "本次生活线索：" + plan.prompt));
         return messages;
     }
 
@@ -465,12 +637,19 @@ public class LiveChatWorker extends Worker {
         body.put("model", settings.optString("model", "gpt-4.1-mini").trim());
         body.put("messages", messages);
         body.put("temperature", temperature);
-        body.put("max_tokens", Math.max(64, settings.optInt("maxTokens", 220)));
+        String model = settings.optString("model", "gpt-4.1-mini").trim();
+        int configuredTokens = Math.max(48, settings.optInt("maxTokens", 220));
+        boolean reasoningModel = model.toLowerCase(Locale.ROOT).contains("reasoner")
+                || model.toLowerCase(Locale.ROOT).contains("deepseek-r1")
+                || model.toLowerCase(Locale.ROOT).contains("deepseek-v4");
+        body.put("max_tokens", reasoningModel
+                ? Math.max(384, configuredTokens)
+                : Math.min(128, configuredTokens));
 
         HttpURLConnection connection = (HttpURLConnection) new URL(chatUrl(settings)).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(15000);
-        connection.setReadTimeout(60000);
+        connection.setReadTimeout(120000);
         connection.setDoOutput(true);
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
         connection.setRequestProperty(
@@ -488,8 +667,12 @@ public class LiveChatWorker extends Worker {
             throw new IllegalStateException("HTTP " + code);
         }
         JSONObject data = new JSONObject(text);
-        return data.getJSONArray("choices")
-                .getJSONObject(0)
+        JSONObject choice = data.getJSONArray("choices").getJSONObject(0);
+        String finishReason = choice.optString("finish_reason", "").toLowerCase(Locale.ROOT);
+        if ("length".equals(finishReason) || "max_tokens".equals(finishReason)) {
+            throw new IllegalStateException("LLM output was truncated");
+        }
+        return choice
                 .getJSONObject("message")
                 .optString("content", "")
                 .trim();
@@ -551,12 +734,12 @@ public class LiveChatWorker extends Worker {
         body.put("system", system.toString());
         body.put("messages", anthropicMessages);
         body.put("temperature", temperature);
-        body.put("max_tokens", Math.max(64, settings.optInt("maxTokens", 220)));
+        body.put("max_tokens", Math.min(128, Math.max(48, settings.optInt("maxTokens", 220))));
 
         HttpURLConnection connection = (HttpURLConnection) new URL(anthropicUrl(settings)).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(15000);
-        connection.setReadTimeout(60000);
+        connection.setReadTimeout(120000);
         connection.setDoOutput(true);
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
         connection.setRequestProperty("x-api-key", settings.optString("apiKey", "").trim());
@@ -689,6 +872,40 @@ public class LiveChatWorker extends Worker {
         return answer.length() > 28 && letters > cjk * 2 && letters > 20;
     }
 
+    private static boolean needsProactiveRetry(String answer, PendingPlan plan) {
+        if (!plan.id.startsWith("proactive-")) {
+            return false;
+        }
+        String trimmed = answer.trim();
+        if (trimmed.matches("^[（(][^）)]{1,30}[）)].*")) {
+            return true;
+        }
+        String[] genericQuestions = {
+                "最近在烦恼些什么", "最近怎么样", "在干嘛", "忙吗", "有什么想说的", "今天过得怎么样"
+        };
+        for (String question : genericQuestions) {
+            if (trimmed.contains(question)) {
+                return true;
+            }
+        }
+        Calendar calendar = Calendar.getInstance();
+        int hour = calendar.get(Calendar.HOUR_OF_DAY);
+        if (hour >= 8 && hour < 18
+                && (trimmed.contains("晚安")
+                || trimmed.contains("早点睡")
+                || trimmed.contains("做个好梦")
+                || trimmed.contains("明天见"))) {
+            return true;
+        }
+        if (hour >= 18
+                && (trimmed.contains("早安")
+                || trimmed.contains("早上好")
+                || trimmed.contains("上午好"))) {
+            return true;
+        }
+        return false;
+    }
+
     private static boolean needsSpeakerRetry(
             String answer,
             JSONObject conversation,
@@ -763,6 +980,40 @@ public class LiveChatWorker extends Worker {
         return stripSpeakerPrefix(result, candidates);
     }
 
+    private static String enforceWechatLength(String text, int maxCharacters, int maxSentences) {
+        String result = text.trim()
+                .replaceFirst("^\\s*[（(][^）)]{1,30}[）)]\\s*", "");
+        String[] assistantPhrases = {
+                "如果你愿意的话", "我理解你的感受", "希望你能", "总之", "作为一个", "作为AI", "作为 AI"
+        };
+        for (String phrase : assistantPhrases) {
+            result = result.replace(phrase, "");
+        }
+        result = result
+                .replaceAll("(?m)^[\\-*•]\\s*", "")
+                .replaceAll("\\n{2,}", "\n")
+                .trim();
+        String[] sentences = result.split("(?<=[。！？!?])|\\n");
+        StringBuilder builder = new StringBuilder();
+        int count = 0;
+        for (String sentence : sentences) {
+            String clean = sentence.trim();
+            if (clean.isEmpty()) {
+                continue;
+            }
+            if (count >= maxSentences) {
+                break;
+            }
+            builder.append(clean);
+            count += 1;
+        }
+        result = builder.length() == 0 ? result : builder.toString();
+        if (result.length() > maxCharacters) {
+            result = result.substring(0, Math.max(1, maxCharacters - 1)).trim() + "…";
+        }
+        return result.trim();
+    }
+
     private static boolean isNearDuplicateReply(JSONArray messages, JSONObject reply) {
         String normalized = normalizeReplyForCompare(reply.optString("content", ""));
         if (normalized.length() < 2) {
@@ -782,7 +1033,14 @@ public class LiveChatWorker extends Worker {
             if (normalized.equals(other)) {
                 return true;
             }
+            if (Math.min(normalized.length(), other.length()) >= 4
+                    && (normalized.contains(other) || other.contains(normalized))) {
+                return true;
+            }
             int minLength = Math.min(normalized.length(), other.length());
+            if (minLength >= 4 && longestCommonSubstring(normalized, other) >= 4) {
+                return true;
+            }
             if (minLength >= 8 &&
                     (normalized.startsWith(other.substring(0, minLength)) ||
                             other.startsWith(normalized.substring(0, minLength)))) {
@@ -790,6 +1048,22 @@ public class LiveChatWorker extends Worker {
             }
         }
         return false;
+    }
+
+    private static int longestCommonSubstring(String first, String second) {
+        int[] previous = new int[second.length() + 1];
+        int longest = 0;
+        for (int i = 1; i <= first.length(); i += 1) {
+            int[] current = new int[second.length() + 1];
+            for (int j = 1; j <= second.length(); j += 1) {
+                if (first.charAt(i - 1) == second.charAt(j - 1)) {
+                    current[j] = previous[j - 1] + 1;
+                    longest = Math.max(longest, current[j]);
+                }
+            }
+            previous = current;
+        }
+        return longest;
     }
 
     private static String normalizeReplyForCompare(String text) {
@@ -885,6 +1159,74 @@ public class LiveChatWorker extends Worker {
             builder.append(members.get(i).name);
         }
         return builder.toString();
+    }
+
+    private static long nextProactiveAt(JSONObject conversation, long now) {
+        int cooldown = Math.max(90, conversation.optInt("cooldownMinutes", 90));
+        String frequency = conversation.optString("pingFrequency", "medium");
+        int baseMinutes;
+        if ("low".equals(frequency)) {
+            baseMinutes = Math.max(cooldown, 480);
+        } else if ("high".equals(frequency)) {
+            baseMinutes = Math.max(cooldown, 120);
+        } else {
+            baseMinutes = Math.max(cooldown, 240);
+        }
+        int jitter = Math.max(20, baseMinutes / 3);
+        int stableJitter = Math.abs(conversation.optString("id", "").hashCode()) % (jitter + 1);
+        return nextActiveTime(now + TimeUnit.MINUTES.toMillis(baseMinutes + stableJitter));
+    }
+
+    private static boolean isQuietHour(long millis) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(millis);
+        int hour = calendar.get(Calendar.HOUR_OF_DAY);
+        return hour < 8 || hour >= 23;
+    }
+
+    private static long nextActiveTime(long millis) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(millis);
+        int hour = calendar.get(Calendar.HOUR_OF_DAY);
+        if (hour >= 8 && hour < 23) {
+            return millis;
+        }
+        if (hour >= 23) {
+            calendar.add(Calendar.DAY_OF_MONTH, 1);
+        }
+        calendar.set(Calendar.HOUR_OF_DAY, 8);
+        calendar.set(Calendar.MINUTE, 30);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        return calendar.getTimeInMillis();
+    }
+
+    private static String chatTimeLabel(long millis) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(millis);
+        int hour = calendar.get(Calendar.HOUR_OF_DAY);
+        String period = hour < 6
+                ? "深夜"
+                : hour < 9
+                ? "早晨"
+                : hour < 12
+                ? "上午"
+                : hour < 14
+                ? "中午"
+                : hour < 18
+                ? "下午"
+                : hour < 23
+                ? "晚上"
+                : "深夜";
+        return new SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)
+                .format(new Date(millis)) + "（" + period + "）";
+    }
+
+    private static String shorten(String text, int maxLength) {
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, Math.max(1, maxLength - 1)).trim() + "…";
     }
 
     private static long parseTime(String value) {
