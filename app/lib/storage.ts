@@ -55,7 +55,9 @@ export class PostgresDatabase {
     const local = /localhost|127\.0\.0\.1/.test(connectionString);
     this.pool = new Pool({
       connectionString,
-      max: 10,
+      max: 5,
+      connectionTimeoutMillis: 5_000,
+      idleTimeoutMillis: 30_000,
       ssl:
         process.env.DATABASE_SSL === "false" || local
           ? false

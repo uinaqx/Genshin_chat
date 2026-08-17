@@ -52,6 +52,8 @@ npm test
 
 健康检查地址为 `/api/health`。应用监听 Render 提供的 `PORT`，数据库连接由 Blueprint 自动注入。
 
+Web Service 与 PostgreSQL 必须部署在同一区域。Blueprint 当前将两者固定在 `oregon`，避免 Render 私有数据库地址跨区不可达。
+
 > `render.yaml` 默认使用免费套餐。免费 Web Service 闲置后会休眠，首次唤醒可能较慢；免费 Render Postgres 会在创建 30 天后到期。正式公开运营时应在 Render 控制台将数据库升级为付费实例，避免聊天记录到期丢失。
 
 ## 环境变量
@@ -72,6 +74,12 @@ npm test
 - 对话、消息、队列和每日用量均按账号隔离。
 
 ## 更新记录
+
+### 1.2.1 - 2026-08-17
+
+- 修复 Render 首次部署时 Web Service 与 PostgreSQL 分属不同区域，导致健康检查等待数据库并最终超时的问题。
+- 将两个资源统一部署到 `oregon`，并为 PostgreSQL 增加连接超时与健康检查错误日志。
+- 收紧免费实例的数据库连接池上限，降低连接资源占用。
 
 ### 1.2.0 - 2026-08-17
 

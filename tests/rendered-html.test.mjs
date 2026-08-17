@@ -31,9 +31,11 @@ test("keeps credentials and persistence server-side", async () => {
   assert.match(chatRoute, /viewer\.email/);
   assert.match(storage, /CREATE TABLE IF NOT EXISTS users/);
   assert.match(storage, /CREATE TABLE IF NOT EXISTS conversations/);
+  assert.match(storage, /connectionTimeoutMillis:\s*5_000/);
   assert.match(auth, /httpOnly:\s*true/);
   assert.match(blueprint, /property:\s*connectionString/);
   assert.match(blueprint, /DEEPSEEK_API_KEY[\s\S]*sync:\s*false/);
+  assert.equal(blueprint.match(/region:\s*oregon/g)?.length, 2);
   assert.match(exampleEnv, /DATABASE_URL=/);
   assert.doesNotMatch(
     `${chatRoute}\n${storage}\n${auth}\n${blueprint}\n${exampleEnv}`,

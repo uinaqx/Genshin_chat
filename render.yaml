@@ -1,6 +1,7 @@
 databases:
   - name: teyvat-wechat-db
     plan: free
+    region: oregon
     databaseName: teyvat_wechat
     user: teyvat_wechat
 
@@ -9,7 +10,7 @@ services:
     name: teyvat-wechat
     runtime: node
     plan: free
-    region: singapore
+    region: oregon
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /api/health

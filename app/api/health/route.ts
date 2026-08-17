@@ -8,7 +8,9 @@ export async function GET() {
     const { DB } = runtimeEnv();
     await DB.prepare("SELECT 1 AS ok").first();
     return Response.json({ status: "ok" });
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    console.error("[health] database unavailable:", message);
     return Response.json({ status: "unavailable" }, { status: 503 });
   }
 }
