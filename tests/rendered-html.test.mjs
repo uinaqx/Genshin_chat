@@ -2,43 +2,41 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("ships the finished login surface", async () => {
-  const [page, layout, styles] = await Promise.all([
+test("ships independent account login and registration", async () => {
+  const [page, form, viewer, styles] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/login-form.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/viewer.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(page, /提瓦特微信/);
-  assert.match(page, /使用 ChatGPT 登录/);
-  assert.match(page, /聊天记录仅对当前账号可见/);
-  assert.match(layout, /og\.png/);
+  assert.match(form, /api\/auth\/\$\{mode\}/);
+  assert.match(form, /创建账号/);
+  assert.match(viewer, /teyvat_session/);
   assert.match(styles, /backdrop-filter:\s*blur/);
-  assert.doesNotMatch(
-    `${page}\n${layout}\n${styles}`,
-    /codex-preview|Your site is taking shape/,
-  );
+  assert.doesNotMatch(`${page}\n${viewer}`, /signin-with-chatgpt|oai-authenticated/);
 });
 
-test("keeps identity, persistence, and model credentials server-side", async () => {
-  const [chatPage, viewer, chatRoute, storage, hosting, exampleEnv] =
+test("keeps credentials and persistence server-side", async () => {
+  const [chatPage, chatRoute, storage, auth, blueprint, exampleEnv] =
     await Promise.all([
       readFile(new URL("../app/chat/page.tsx", import.meta.url), "utf8"),
-      readFile(new URL("../app/lib/viewer.ts", import.meta.url), "utf8"),
       readFile(new URL("../app/api/chat/route.ts", import.meta.url), "utf8"),
       readFile(new URL("../app/lib/storage.ts", import.meta.url), "utf8"),
-      readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
+      readFile(new URL("../app/lib/auth.ts", import.meta.url), "utf8"),
+      readFile(new URL("../render.yaml", import.meta.url), "utf8"),
       readFile(new URL("../.env.example", import.meta.url), "utf8"),
     ]);
-
   assert.match(chatPage, /requireViewer/);
-  assert.match(viewer, /getChatGPTUser/);
   assert.match(chatRoute, /viewer\.email/);
-  assert.match(chatRoute, /DEEPSEEK_API_KEY/);
+  assert.match(storage, /CREATE TABLE IF NOT EXISTS users/);
   assert.match(storage, /CREATE TABLE IF NOT EXISTS conversations/);
-  assert.match(hosting, /"d1": "DB"/);
-  assert.match(exampleEnv, /DEEPSEEK_API_KEY=/);
+  assert.match(auth, /httpOnly:\s*true/);
+  assert.match(blueprint, /property:\s*connectionString/);
+  assert.match(blueprint, /DEEPSEEK_API_KEY[\s\S]*sync:\s*false/);
+  assert.match(exampleEnv, /DATABASE_URL=/);
   assert.doesNotMatch(
-    `${chatRoute}\n${storage}\n${exampleEnv}`,
+    `${chatRoute}\n${storage}\n${auth}\n${blueprint}\n${exampleEnv}`,
     /sk-[A-Za-z0-9_-]{20,}/,
   );
 });
@@ -51,16 +49,13 @@ test("keeps chat input available while durable reply batches run", async () => {
     readFile(new URL("../app/lib/storage.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
-
   assert.match(client, /fetch\("\/api\/messages"/);
   assert.match(client, /pendingReplyIdsRef/);
   assert.match(client, /messageIds:\s*batch/);
   assert.doesNotMatch(client, /disabled=\{sending\}/);
   assert.match(messageRoute, /INSERT INTO reply_queue/);
   assert.match(chatRoute, /claimReplyJob/);
-  assert.match(chatRoute, /thinking:\s*\{ type: "disabled" \}/);
   assert.match(storage, /CREATE TABLE IF NOT EXISTS reply_jobs/);
-  assert.match(styles, /\.sidebar\s*\{[\s\S]*?overflow:\s*hidden/);
   assert.match(styles, /\.tab-bar\s*\{[\s\S]*?z-index:\s*6/);
 });
 

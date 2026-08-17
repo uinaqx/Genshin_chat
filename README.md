@@ -1,47 +1,85 @@
 # 提瓦特微信 Web
 
-提瓦特微信的网页版。访客通过 ChatGPT 登录后，可以与 116 名非旅行者《原神》角色私聊，也可以自由选择角色创建群聊。聊天记录按登录账号隔离并保存在 D1，模型密钥仅存在于 Sites 服务端环境变量。
+一个面向浏览器的《原神》角色聊天应用。注册后可以与 116 名非旅行者角色私聊，也可以自由组合角色创建群聊。每个账号拥有独立的聊天记录，模型密钥仅保存在服务端环境变量中。
 
 ## 功能
 
-- ChatGPT 登录与账号级数据隔离
+- 邮箱注册与登录，密码使用 bcrypt 哈希保存
+- HttpOnly 会话 Cookie 与账号级数据隔离
 - 116 名角色通讯录，已同步至 2026 年 7 月上线的桑多涅
 - 私聊和自定义群聊
 - 微信式短消息与单轮连续气泡
-- 输入与模型回复解耦，角色回复期间仍可连续发送消息
-- 同一会话按批次合并暂存消息并串行生成回复
+- 回复期间仍可连续发送，新消息会合并为下一批请求
 - 单次群聊最多 3 名角色发言
-- 服务端 DeepSeek API 代理
-- 每账号每日调用限额
+- 服务端 DeepSeek API 代理与每账号每日调用限额
 - Apple 风格浅色界面与高斯模糊玻璃效果
 - 桌面与手机自适应布局
 
+## 技术架构
+
+- Next.js 16 + React 19
+- PostgreSQL
+- bcrypt 密码哈希
+- DeepSeek OpenAI 兼容接口
+- Render Web Service + Render Postgres
+
 ## 本地开发
+
+1. 准备 PostgreSQL 数据库。
+2. 将 `.env.example` 复制为 `.env.local` 并填写配置。
+3. 安装依赖并启动。
 
 ```bash
 npm install
 npm run dev
+```
+
+生产构建检查：
+
+```bash
 npm run build
 npm test
 ```
 
-本地预览会使用仅限 `localhost` 的旅行者账号。生产环境必须通过 ChatGPT 登录。
+## 部署到 Render
+
+仓库根目录的 `render.yaml` 会创建一个 Node Web Service 和一个 PostgreSQL 数据库。
+
+1. 在 Render Dashboard 选择 `New` -> `Blueprint`。
+2. 连接这个 GitHub 仓库并确认 Blueprint。
+3. 在创建页面填写 `DEEPSEEK_API_KEY`，不要把密钥提交到 GitHub。
+4. 部署完成后访问 Render 分配的 `onrender.com` 地址。
+
+健康检查地址为 `/api/health`。应用监听 Render 提供的 `PORT`，数据库连接由 Blueprint 自动注入。
+
+> `render.yaml` 默认使用免费套餐。免费 Web Service 闲置后会休眠，首次唤醒可能较慢；免费 Render Postgres 会在创建 30 天后到期。正式公开运营时应在 Render 控制台将数据库升级为付费实例，避免聊天记录到期丢失。
 
 ## 环境变量
 
-参考 `.env.example`。生产密钥由 Sites 环境变量管理，不应写入源代码或提交记录。
+| 变量 | 用途 |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL 连接字符串 |
+| `DATABASE_SSL` | 本地 PostgreSQL 可设置为 `false` |
+| `DEEPSEEK_API_KEY` | 服务端模型密钥 |
+| `DEEPSEEK_BASE_URL` | 默认 `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | 默认 `deepseek-v4-flash` |
 
-## 数据
+## 数据安全
 
-- `conversations`：用户拥有的私聊和群聊
-- `messages`：按用户与会话隔离的消息
-- `daily_usage`：每账号每日调用计数
-- `reply_queue`：已经发送、等待角色处理的消息
-- `reply_jobs`：防止同一会话重复并发调用模型的短租约
-
-数据库结构位于 `db/schema.ts`，迁移位于 `drizzle/`。
+- API Key 和数据库连接串不进入浏览器包，也不会写入仓库。
+- 登录密码只保存 bcrypt 哈希。
+- 会话令牌仅保存 SHA-256 哈希，浏览器 Cookie 设置为 HttpOnly、SameSite=Lax，生产环境启用 Secure。
+- 对话、消息、队列和每日用量均按账号隔离。
 
 ## 更新记录
+
+### 1.2.0 - 2026-08-17
+
+- 从 GPT Sites/Cloudflare D1 迁移到标准 Next.js/Render/PostgreSQL 架构。
+- 新增邮箱注册、密码登录、安全会话与账号级聊天数据隔离。
+- 新增 Render Blueprint、数据库绑定和 `/api/health` 健康检查。
+- 模型密钥改为 Render 服务端环境变量，保持不可见且不进入 Git 历史。
+- 保留消息持久化、批次合并和按会话串行生成回复的聊天队列。
 
 ### 1.1.0 - 2026-08-17
 
@@ -54,4 +92,4 @@ npm test
 
 ### 1.0.0 - 2026-07-28
 
-- 首次发布网页版，提供 ChatGPT 登录、账号级数据隔离、私聊、自定义群聊与服务端模型代理。
+- 首次发布网页版，提供账号级数据隔离、私聊、自定义群聊与服务端模型代理。

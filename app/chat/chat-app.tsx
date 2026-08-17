@@ -687,11 +687,11 @@ function ProfilePanel({
           </span>
         </div>
       </div>
-      <a className="signout-link" href="/signout-with-chatgpt?return_to=%2F">
+      <a className="signout-link" href="/api/auth/logout">
         <LogOut size={18} />
         退出登录
       </a>
-      <p className="version-label">提瓦特微信 Web · 1.1.0</p>
+      <p className="version-label">提瓦特微信 Web · 1.2.0</p>
     </div>
   );
 }

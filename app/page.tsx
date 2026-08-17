@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { ArrowRight, LockKeyhole, MessageCircleMore } from "lucide-react";
-import { chatGPTSignInPath } from "./chatgpt-auth";
+import { LoginForm } from "./login-form";
 import { getViewer } from "./lib/viewer";
 
 export const metadata: Metadata = {
   title: "登录 | 提瓦特微信",
-  description: "使用 ChatGPT 账号登录提瓦特微信。",
+  description: "登录提瓦特微信，每个账号拥有独立聊天记录。",
 };
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,6 @@ const portraitUrls = [
 
 export default async function Home() {
   const viewer = await getViewer();
-  const destination = viewer ? "/chat" : chatGPTSignInPath("/chat");
-
   return (
     <main className="login-page">
       <div className="login-portrait-field" aria-hidden="true">
@@ -38,13 +36,17 @@ export default async function Home() {
         <p className="login-copy">
           那些熟悉的人，正在提瓦特的另一端等你回信。
         </p>
-        <a className="primary-action" href={destination}>
-          <span>{viewer ? "进入聊天" : "使用 ChatGPT 登录"}</span>
-          <ArrowRight aria-hidden="true" size={18} />
-        </a>
+        {viewer ? (
+          <a className="primary-action" href="/chat">
+            <span>进入聊天</span>
+            <ArrowRight aria-hidden="true" size={18} />
+          </a>
+        ) : (
+          <LoginForm />
+        )}
         <div className="privacy-note">
           <LockKeyhole aria-hidden="true" size={15} />
-          <span>登录后，聊天记录仅对当前账号可见</span>
+          <span>密码加密保存，聊天记录仅对当前账号可见</span>
         </div>
       </section>
       <p className="fan-note">非官方粉丝作品 · 角色版权归原权利方所有</p>
