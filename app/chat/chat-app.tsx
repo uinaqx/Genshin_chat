@@ -62,12 +62,16 @@ export function ChatApp({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const processingRef = useRef(new Set<string>());
+  const pendingReplyIdsRef = useRef(new Map<string, string[]>());
+  const saveChainsRef = useRef(new Map<string, Promise<void>>());
+  const retryCountsRef = useRef(new Map<string, number>());
 
   const characterMap = useMemo(
     () => new Map(characters.map((character) => [character.id, character])),
@@ -109,6 +113,7 @@ export function ChatApp({
       setCharacters(characterPayload.characters ?? []);
       setConversations(conversationPayload.conversations ?? []);
       if (preferredId) setSelectedId(preferredId);
+      void resumePendingReplies();
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "加载失败");
     } finally {
@@ -118,6 +123,16 @@ export function ChatApp({
 
   async function openCharacter(character: Character) {
     setError("");
+    const existing = conversations.find(
+      (conversation) =>
+        conversation.type === "single" &&
+        conversation.memberIds[0] === character.id,
+    );
+    if (existing) {
+      setSelectedId(existing.id);
+      setActiveTab("chats");
+      return;
+    }
     const response = await fetch("/api/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -125,25 +140,26 @@ export function ChatApp({
     });
     const payload = (await response.json()) as {
       id?: string;
+      conversation?: Conversation;
       error?: string;
     };
     if (!response.ok) {
       setError(payload.error || "无法发起聊天");
       return;
     }
-    if (!payload.id) return;
-    await loadWorkspace(payload.id);
+    if (!payload.id || !payload.conversation) return;
+    setConversations((current) => [payload.conversation!, ...current]);
+    setSelectedId(payload.id);
     setActiveTab("chats");
   }
 
-  async function sendMessage() {
+  function sendMessage() {
     const content = draft.trim();
     const conversation = selectedConversation;
-    if (!content || !conversation || sending) return;
+    if (!content || !conversation) return;
     setDraft("");
     setError("");
-    setSending(true);
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${crypto.randomUUID()}`;
     const optimistic: Message = {
       id: tempId,
       role: "user",
@@ -153,31 +169,124 @@ export function ChatApp({
       createdAt: new Date().toISOString(),
     };
     appendMessages(conversation.id, [optimistic]);
-    try {
-      const response = await fetch("/api/chat", {
+    const previousSave = saveChainsRef.current.get(conversation.id) ??
+      Promise.resolve();
+    const saveTask = previousSave.catch(() => undefined).then(async () => {
+      const response = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversationId: conversation.id, content }),
       });
       const payload = (await response.json()) as {
-        userMessage?: Message;
-        replies?: Message[];
+        message?: Message;
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error || "消息发送失败");
-      if (payload.userMessage) {
-        replaceMessage(conversation.id, tempId, payload.userMessage);
+      if (!payload.message) throw new Error("消息保存失败");
+      replaceMessage(conversation.id, tempId, payload.message);
+      enqueueReply(conversation.id, [payload.message.id]);
+    });
+    saveChainsRef.current.set(conversation.id, saveTask);
+    void saveTask
+      .catch((sendError) => {
+        removeMessage(conversation.id, tempId);
+        setDraft((current) => current || content);
+        setError(
+          sendError instanceof Error ? sendError.message : "消息发送失败",
+        );
+      })
+      .finally(() => {
+        if (saveChainsRef.current.get(conversation.id) === saveTask) {
+          saveChainsRef.current.delete(conversation.id);
+        }
+      });
+  }
+
+  async function resumePendingReplies() {
+    try {
+      const response = await fetch("/api/messages");
+      if (!response.ok) return;
+      const payload = (await response.json()) as {
+        pending?: Array<{ conversationId: string; messageIds: string[] }>;
+      };
+      for (const pending of payload.pending ?? []) {
+        enqueueReply(pending.conversationId, pending.messageIds);
       }
-      for (const reply of payload.replies ?? []) {
-        await wait(480);
-        appendMessages(conversation.id, [reply]);
+    } catch {
+      // The next successfully saved message will retry any durable pending work.
+    }
+  }
+
+  function enqueueReply(conversationId: string, messageIds: string[]) {
+    const queued = pendingReplyIdsRef.current.get(conversationId) ?? [];
+    const next = Array.from(new Set([...queued, ...messageIds]));
+    pendingReplyIdsRef.current.set(conversationId, next);
+    void processReplyQueue(conversationId);
+  }
+
+  async function processReplyQueue(conversationId: string) {
+    if (processingRef.current.has(conversationId)) return;
+    processingRef.current.add(conversationId);
+    setProcessingIds((current) => new Set(current).add(conversationId));
+
+    try {
+      while (true) {
+        const queued = pendingReplyIdsRef.current.get(conversationId) ?? [];
+        if (queued.length === 0) break;
+        const batch = queued.splice(0, 30);
+        pendingReplyIdsRef.current.set(conversationId, queued);
+
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversationId, messageIds: batch }),
+        });
+        const payload = (await response.json()) as {
+          busy?: boolean;
+          retryAfterMs?: number;
+          replies?: Message[];
+          error?: string;
+        };
+        if (response.status === 202 && payload.busy) {
+          pendingReplyIdsRef.current.set(conversationId, [
+            ...batch,
+            ...(pendingReplyIdsRef.current.get(conversationId) ?? []),
+          ]);
+          await wait(payload.retryAfterMs ?? 900);
+          continue;
+        }
+        if (!response.ok) {
+          pendingReplyIdsRef.current.set(conversationId, [
+            ...batch,
+            ...(pendingReplyIdsRef.current.get(conversationId) ?? []),
+          ]);
+          throw new Error(payload.error || "回复暂时失败");
+        }
+        retryCountsRef.current.delete(conversationId);
+        for (const reply of payload.replies ?? []) {
+          await wait(420);
+          appendMessages(conversationId, [reply]);
+        }
       }
-    } catch (sendError) {
-      removeMessage(conversation.id, tempId);
-      setDraft(content);
-      setError(sendError instanceof Error ? sendError.message : "消息发送失败");
+    } catch (replyError) {
+      const retryCount = (retryCountsRef.current.get(conversationId) ?? 0) + 1;
+      retryCountsRef.current.set(conversationId, retryCount);
+      setError(
+        `${replyError instanceof Error ? replyError.message : "回复暂时失败"}，消息已保存，稍后发送或重新打开页面时会自动续上。`,
+      );
     } finally {
-      setSending(false);
+      processingRef.current.delete(conversationId);
+      setProcessingIds((current) => {
+        const next = new Set(current);
+        next.delete(conversationId);
+        return next;
+      });
+      if (
+        (pendingReplyIdsRef.current.get(conversationId)?.length ?? 0) > 0 &&
+        (retryCountsRef.current.get(conversationId) ?? 0) <= 1
+      ) {
+        window.setTimeout(() => void processReplyQueue(conversationId), 2500);
+      }
     }
   }
 
@@ -358,7 +467,8 @@ export function ChatApp({
                 />
                 <div className="chat-heading">
                   <h2>
-                    {sending && selectedConversation.type === "single"
+                    {processingIds.has(selectedConversation.id) &&
+                    selectedConversation.type === "single"
                       ? "正在输入..."
                       : selectedConversation.title}
                   </h2>
@@ -428,15 +538,14 @@ export function ChatApp({
                     placeholder="输入消息"
                     rows={1}
                     aria-label="输入消息"
-                    disabled={sending}
                   />
                   <button
                     className="send-button"
                     type="button"
                     aria-label="发送"
                     title="发送"
-                    disabled={!draft.trim() || sending}
-                    onClick={() => void sendMessage()}
+                    disabled={!draft.trim()}
+                    onClick={sendMessage}
                   >
                     <Send size={19} />
                   </button>
@@ -582,7 +691,7 @@ function ProfilePanel({
         <LogOut size={18} />
         退出登录
       </a>
-      <p className="version-label">提瓦特微信 Web · 1.0</p>
+      <p className="version-label">提瓦特微信 Web · 1.1.0</p>
     </div>
   );
 }

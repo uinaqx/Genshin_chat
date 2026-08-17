@@ -11,11 +11,18 @@ type ConversationRow = {
   member_ids: string;
 };
 
+type PendingRow = {
+  message_id: string;
+  created_at: string;
+};
+
 type HistoryRow = {
+  id: string;
   role: "user" | "assistant";
   character_id: string | null;
   author_name: string | null;
   content: string;
+  is_pending: number;
 };
 
 type Reply = {
@@ -29,16 +36,26 @@ export async function POST(request: Request) {
   if (!viewer) {
     return Response.json({ error: "请先登录" }, { status: 401 });
   }
+
+  let lockToken: string | null = null;
+  let conversationId = "";
   try {
     const payload = (await request.json()) as {
       conversationId?: string;
-      content?: string;
+      messageIds?: string[];
     };
-    const conversationId = payload.conversationId?.trim() ?? "";
-    const content = payload.content?.trim() ?? "";
-    if (!conversationId || !content || content.length > 1000) {
-      return Response.json({ error: "消息内容不正确" }, { status: 400 });
+    conversationId = payload.conversationId?.trim() ?? "";
+    const messageIds = Array.from(
+      new Set(
+        (payload.messageIds ?? []).filter(
+          (id): id is string => typeof id === "string" && id.length > 0,
+        ),
+      ),
+    ).slice(0, 30);
+    if (!conversationId || messageIds.length === 0) {
+      return Response.json({ error: "待回复消息不正确" }, { status: 400 });
     }
+
     await ensureSchema();
     const { DB } = runtimeEnv();
     const conversation = await DB.prepare(
@@ -50,77 +67,137 @@ export async function POST(request: Request) {
     if (!conversation) {
       return Response.json({ error: "对话不存在" }, { status: 404 });
     }
+
+    lockToken = await claimReplyJob(viewer.email, conversationId);
+    if (!lockToken) {
+      return Response.json(
+        { busy: true, retryAfterMs: 900 },
+        { status: 202 },
+      );
+    }
+
+    const placeholders = messageIds.map(() => "?").join(", ");
+    const pending = await DB.prepare(
+      `SELECT q.message_id, q.created_at
+       FROM reply_queue q
+       WHERE q.owner_id = ? AND q.conversation_id = ?
+         AND q.message_id IN (${placeholders})
+       ORDER BY q.created_at ASC`,
+    )
+      .bind(viewer.email, conversationId, ...messageIds)
+      .all<PendingRow>();
+    if (pending.results.length === 0) {
+      return Response.json({ replies: [], processedMessageIds: [] });
+    }
+
     const limitResponse = await claimDailyCall(viewer.email);
     if (limitResponse) return limitResponse;
 
-    const now = new Date().toISOString();
-    const userMessage = {
-      id: crypto.randomUUID(),
-      role: "user" as const,
-      characterId: null,
-      authorName: "旅行者",
-      content,
-      createdAt: now,
-    };
-    await DB.prepare(
-      `INSERT INTO messages
-       (id, conversation_id, owner_id, role, character_id, author_name, content, created_at)
-       VALUES (?, ?, ?, 'user', NULL, '旅行者', ?, ?)`,
-    )
-      .bind(
-        userMessage.id,
-        conversationId,
-        viewer.email,
-        content,
-        now,
-      )
-      .run();
-
-    const history = await DB.prepare(
-      `SELECT role, character_id, author_name, content
-       FROM messages
-       WHERE owner_id = ? AND conversation_id = ?
-       ORDER BY created_at DESC LIMIT 18`,
+    const selectedIds = new Set(pending.results.map((row) => row.message_id));
+    const historyRows = await DB.prepare(
+      `SELECT m.id, m.role, m.character_id, m.author_name, m.content,
+              CASE WHEN q.message_id IS NULL THEN 0 ELSE 1 END AS is_pending
+       FROM messages m
+       LEFT JOIN reply_queue q ON q.message_id = m.id
+       WHERE m.owner_id = ? AND m.conversation_id = ?
+       ORDER BY m.created_at DESC LIMIT 64`,
     )
       .bind(viewer.email, conversationId)
       .all<HistoryRow>();
+    const history = historyRows.results
+      .reverse()
+      .filter((message) => !message.is_pending || selectedIds.has(message.id))
+      .slice(-(20 + selectedIds.size));
+
     const memberIds = JSON.parse(conversation.member_ids) as string[];
     const replies =
       conversation.type === "group"
-        ? await generateGroupReplies(memberIds, history.results.reverse())
-        : await generateSingleReplies(memberIds[0], history.results.reverse());
+        ? await generateGroupReplies(memberIds, history)
+        : await generateSingleReplies(memberIds[0], history);
 
-    const savedReplies = [];
-    for (let index = 0; index < replies.length; index += 1) {
-      const reply = replies[index];
-      const createdAt = new Date(Date.now() + index + 1).toISOString();
-      const id = crypto.randomUUID();
-      await DB.prepare(
-        `INSERT INTO messages
-         (id, conversation_id, owner_id, role, character_id, author_name, content, created_at)
-         VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?)`,
-      )
-        .bind(
-          id,
+    const savedReplies = replies.map((reply, index) => ({
+      id: crypto.randomUUID(),
+      role: "assistant" as const,
+      ...reply,
+      createdAt: new Date(Date.now() + index).toISOString(),
+    }));
+    const updatedAt = new Date().toISOString();
+    await DB.batch([
+      ...savedReplies.map((reply) =>
+        DB.prepare(
+          `INSERT INTO messages
+           (id, conversation_id, owner_id, role, character_id, author_name, content, created_at)
+           VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?)`,
+        ).bind(
+          reply.id,
           conversationId,
           viewer.email,
           reply.characterId,
           reply.authorName,
           reply.content,
-          createdAt,
-        )
-        .run();
-      savedReplies.push({ id, role: "assistant", ...reply, createdAt });
-    }
-    await DB.prepare(
-      "UPDATE conversations SET updated_at = ? WHERE id = ? AND owner_id = ?",
-    )
-      .bind(new Date().toISOString(), conversationId, viewer.email)
-      .run();
-    return Response.json({ userMessage, replies: savedReplies });
+          reply.createdAt,
+        ),
+      ),
+      ...pending.results.map((row) =>
+        DB.prepare(
+          "DELETE FROM reply_queue WHERE message_id = ? AND owner_id = ?",
+        ).bind(row.message_id, viewer.email),
+      ),
+      DB.prepare(
+        "UPDATE conversations SET updated_at = ? WHERE id = ? AND owner_id = ?",
+      ).bind(updatedAt, conversationId, viewer.email),
+    ]);
+
+    return Response.json({
+      replies: savedReplies,
+      processedMessageIds: pending.results.map((row) => row.message_id),
+    });
   } catch (error) {
     return apiError(error);
+  } finally {
+    if (lockToken && conversationId) {
+      await releaseReplyJob(viewer.email, conversationId, lockToken).catch(
+        () => undefined,
+      );
+    }
   }
+}
+
+async function claimReplyJob(
+  ownerId: string,
+  conversationId: string,
+): Promise<string | null> {
+  const { DB } = runtimeEnv();
+  const token = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const leaseUntil = new Date(Date.now() + 150_000).toISOString();
+  const result = await DB.prepare(
+    `INSERT INTO reply_jobs(conversation_id, owner_id, lock_token, lease_until)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(conversation_id) DO UPDATE SET
+       owner_id = excluded.owner_id,
+       lock_token = excluded.lock_token,
+       lease_until = excluded.lease_until
+     WHERE reply_jobs.owner_id = excluded.owner_id
+       AND reply_jobs.lease_until <= ?`,
+  )
+    .bind(conversationId, ownerId, token, leaseUntil, now)
+    .run();
+  return (result.meta.changes ?? 0) > 0 ? token : null;
+}
+
+async function releaseReplyJob(
+  ownerId: string,
+  conversationId: string,
+  lockToken: string,
+) {
+  const { DB } = runtimeEnv();
+  await DB.prepare(
+    `DELETE FROM reply_jobs
+     WHERE conversation_id = ? AND owner_id = ? AND lock_token = ?`,
+  )
+    .bind(conversationId, ownerId, lockToken)
+    .run();
 }
 
 async function claimDailyCall(ownerId: string): Promise<Response | null> {
@@ -172,26 +249,20 @@ async function generateSingleReplies(
 3. 角色有自己的生活、职责、情绪和边界，不把帮助旅行者当成唯一目的。
 4. 可以一次连续发1到3条独立消息，但不要每轮都拆成相同数量。
 5. 不要每次称呼“旅行者”，不要写旁白、括号动作或角色名前缀。
-6. 仅输出严格JSON：{"messages":["第一条","第二条"]}。
+6. 旅行者可能连续发了几条消息，要把它们当作同一段微信聊天完整理解，不遗漏任何一条。
+7. 仅输出严格JSON：{"messages":["第一条","第二条"]}。
 `.trim();
   const raw = await complete([
     { role: "system", content: system },
     ...history.map((message) => ({
       role: message.role,
-      content:
-        message.role === "assistant"
-          ? message.content
-          : message.content,
+      content: message.content,
     })),
   ]);
-  const parsed = parseJson(raw) as { messages?: unknown[] };
-  const messages = Array.isArray(parsed.messages)
-    ? parsed.messages
-        .filter((item): item is string => typeof item === "string")
-        .map(cleanReply)
-        .filter(Boolean)
-        .slice(0, 3)
-    : [];
+  const messages = extractSingleMessages(raw);
+  if (messages.length === 0) {
+    throw new Error("模型回复格式无效");
+  }
   return messages.map((content) => ({
     characterId,
     authorName: character.name,
@@ -229,20 +300,22 @@ ${roster}
 ${transcript}
 
 决定这一轮0到3名真正有动机接话的角色。允许没人回复；不要让所有人排队发表读后感。
-后一个角色必须能看到前一个角色刚说的话，可以互相吐槽、接话或转移话题。
+旅行者可能连续发了几条消息，必须完整理解这一批消息。后一个角色必须能看到前一个角色刚说的话，可以互相吐槽、接话或转移话题。
 每个人的长度和句式要不同，日常消息保持短小。角色必须严格符合各自身份。
 只输出严格JSON：{"messages":[{"character_id":"角色ID","content":"正文"}]}。
 `.trim(),
     },
     {
       role: "user",
-      content: history.at(-1)?.content ?? "",
+      content: "根据上面的完整群聊记录，输出本轮 JSON。",
     },
   ]);
   const parsed = parseJson(raw) as {
     messages?: Array<{ character_id?: unknown; content?: unknown }>;
   };
-  if (!Array.isArray(parsed.messages)) return [];
+  if (!Array.isArray(parsed.messages)) {
+    throw new Error("群聊回复格式无效");
+  }
   return parsed.messages
     .map((item) => {
       const characterId =
@@ -269,30 +342,73 @@ async function complete(
     /\/+$/,
     "",
   );
-  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: runtime.DEEPSEEK_MODEL || "deepseek-v4-flash",
-      messages,
-      temperature: 0.9,
-      max_tokens: 700,
-      response_format: { type: "json_object" },
-    }),
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`模型服务返回 ${response.status}: ${errorText.slice(0, 180)}`);
+  let lastError = "模型没有返回正文";
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        signal: AbortSignal.timeout(45_000),
+        body: JSON.stringify({
+          model: runtime.DEEPSEEK_MODEL || "deepseek-v4-flash",
+          messages,
+          temperature: attempt === 0 ? 0.9 : 0.72,
+          max_tokens: 700,
+          thinking: { type: "disabled" },
+          ...(attempt === 0
+            ? { response_format: { type: "json_object" } }
+            : {}),
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        lastError = `模型服务返回 ${response.status}: ${errorText.slice(0, 180)}`;
+        if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
+          await wait(650);
+          continue;
+        }
+        throw new Error(lastError);
+      }
+      const data = (await response.json()) as {
+        choices?: Array<{
+          finish_reason?: string;
+          message?: { content?: string | null };
+        }>;
+      };
+      const content = data.choices?.[0]?.message?.content?.trim() ?? "";
+      if (content) return content;
+      lastError = `模型没有返回正文（${data.choices?.[0]?.finish_reason || "empty"}）`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : lastError;
+    }
+    if (attempt === 0) await wait(500);
   }
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = data.choices?.[0]?.message?.content?.trim() ?? "";
-  if (!content) throw new Error("模型没有返回正文");
-  return content;
+  throw new Error(lastError);
+}
+
+function extractSingleMessages(raw: string): string[] {
+  const parsed = parseJson(raw) as { messages?: unknown[] };
+  const structured = Array.isArray(parsed.messages)
+    ? parsed.messages
+        .filter((item): item is string => typeof item === "string")
+        .map(cleanReply)
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+  if (structured.length > 0) return structured;
+
+  if (!raw.trim().startsWith("{")) {
+    return raw
+      .split(/\n{2,}/)
+      .map(cleanReply)
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+  return [];
 }
 
 function parseJson(raw: string): unknown {
@@ -313,4 +429,8 @@ function cleanReply(value: string): string {
     .replace(/[ \t]+/g, " ")
     .trim()
     .slice(0, 220);
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

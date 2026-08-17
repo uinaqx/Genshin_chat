@@ -109,14 +109,18 @@ export async function POST(request: Request) {
     const { DB } = runtimeEnv();
     if (type === "single") {
       const existing = await DB.prepare(
-        `SELECT id FROM conversations
+        `SELECT id, title, type, member_ids, created_at, updated_at FROM conversations
          WHERE owner_id = ? AND type = 'single' AND member_ids = ?
          LIMIT 1`,
       )
         .bind(viewer.email, JSON.stringify(memberIds))
-        .first<{ id: string }>();
+        .first<ConversationRow>();
       if (existing) {
-        return Response.json({ id: existing.id });
+        const conversation = await loadConversation(
+          viewer.email,
+          existing,
+        );
+        return Response.json({ id: existing.id, conversation });
       }
     }
     const id = crypto.randomUUID();
@@ -148,10 +152,52 @@ export async function POST(request: Request) {
         now,
       )
       .run();
-    return Response.json({ id }, { status: 201 });
+    return Response.json(
+      {
+        id,
+        conversation: {
+          id,
+          title,
+          type,
+          memberIds,
+          createdAt: now,
+          updatedAt: now,
+          messages: [],
+        },
+      },
+      { status: 201 },
+    );
   } catch (error) {
     return apiError(error);
   }
+}
+
+async function loadConversation(ownerId: string, conversation: ConversationRow) {
+  const { DB } = runtimeEnv();
+  const messages = await DB.prepare(
+    `SELECT id, conversation_id, role, character_id, author_name, content, created_at
+     FROM messages
+     WHERE owner_id = ? AND conversation_id = ?
+     ORDER BY created_at DESC LIMIT 80`,
+  )
+    .bind(ownerId, conversation.id)
+    .all<MessageRow>();
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    type: conversation.type,
+    memberIds: JSON.parse(conversation.member_ids),
+    createdAt: conversation.created_at,
+    updatedAt: conversation.updated_at,
+    messages: messages.results.reverse().map((message) => ({
+      id: message.id,
+      role: message.role,
+      characterId: message.character_id,
+      authorName: message.author_name,
+      content: message.content,
+      createdAt: message.created_at,
+    })),
+  };
 }
 
 async function ensureDefaultGroup(ownerId: string) {

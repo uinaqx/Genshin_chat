@@ -258,8 +258,11 @@ button {
 
 .sidebar {
   display: grid;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
   border-right: 1px solid var(--line);
   background: rgba(250, 251, 252, 0.7);
 }
@@ -349,7 +352,9 @@ button {
 
 .sidebar-content {
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
 }
@@ -489,11 +494,15 @@ button {
 }
 
 .tab-bar {
+  position: relative;
+  z-index: 6;
   display: grid;
+  width: 100%;
   min-height: 70px;
+  flex: 0 0 auto;
   grid-template-columns: repeat(3, 1fr);
   border-top: 1px solid var(--line);
-  background: rgba(250, 251, 252, 0.74);
+  background: rgba(250, 251, 252, 0.92);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
@@ -1098,6 +1107,7 @@ button {
   }
 
   .sidebar {
+    height: 100svh;
     border-right: 0;
   }
 
@@ -1142,6 +1152,8 @@ button {
   }
 
   .tab-bar {
+    position: sticky;
+    bottom: 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
 }

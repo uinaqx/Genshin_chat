@@ -60,6 +60,26 @@ async function createSchema(): Promise<void> {
         PRIMARY KEY(owner_id, usage_day)
       )
     `),
+    DB.prepare(`
+      CREATE TABLE IF NOT EXISTS reply_queue (
+        message_id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    `),
+    DB.prepare(`
+      CREATE INDEX IF NOT EXISTS reply_queue_owner_conversation_idx
+      ON reply_queue(owner_id, conversation_id, created_at)
+    `),
+    DB.prepare(`
+      CREATE TABLE IF NOT EXISTS reply_jobs (
+        conversation_id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        lock_token TEXT NOT NULL,
+        lease_until TEXT NOT NULL
+      )
+    `),
   ]);
 }
 

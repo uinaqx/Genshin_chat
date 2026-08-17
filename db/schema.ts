@@ -44,3 +44,27 @@ export const dailyUsage = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.ownerId, table.usageDay] })],
 );
+
+export const replyQueue = sqliteTable(
+  "reply_queue",
+  {
+    messageId: text("message_id").primaryKey(),
+    conversationId: text("conversation_id").notNull(),
+    ownerId: text("owner_id").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("reply_queue_owner_conversation_idx").on(
+      table.ownerId,
+      table.conversationId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const replyJobs = sqliteTable("reply_jobs", {
+  conversationId: text("conversation_id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  lockToken: text("lock_token").notNull(),
+  leaseUntil: text("lease_until").notNull(),
+});
