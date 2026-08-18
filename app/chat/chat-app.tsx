@@ -5,6 +5,8 @@ import {
   Check,
   ChevronRight,
   ContactRound,
+  ExternalLink,
+  Github,
   LogOut,
   MessageCircleMore,
   MoreHorizontal,
@@ -51,6 +53,7 @@ type Conversation = {
 };
 
 type Tab = "chats" | "contacts" | "profile";
+type ProfileView = "root" | "traveler";
 type TravelerGender = "aether" | "lumine";
 
 const TRAVELERS = {
@@ -82,6 +85,7 @@ export function ChatApp({
   const [error, setError] = useState("");
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const [profileView, setProfileView] = useState<ProfileView>("root");
   const [travelerGender, setTravelerGender] = useState<TravelerGender>(
     user.travelerGender,
   );
@@ -410,9 +414,30 @@ export function ChatApp({
       <div className={`messenger-shell ${selectedConversation ? "has-chat" : ""}`}>
         <aside className="sidebar">
           <header className="sidebar-header">
-            <div>
-              <p className="section-kicker">提瓦特微信</p>
-              <h1>{tabTitle(activeTab)}</h1>
+            <div className="sidebar-heading">
+              {activeTab === "profile" && profileView === "traveler" && (
+                <button
+                  className="profile-back-button"
+                  type="button"
+                  aria-label="返回我的"
+                  title="返回我的"
+                  onClick={() => setProfileView("root")}
+                >
+                  <ArrowLeft size={21} />
+                </button>
+              )}
+              <div>
+                <p className="section-kicker">
+                  {activeTab === "profile" && profileView === "traveler"
+                    ? "我的"
+                    : "提瓦特微信"}
+                </p>
+                <h1>
+                  {activeTab === "profile" && profileView === "traveler"
+                    ? "选择旅行者"
+                    : tabTitle(activeTab)}
+                </h1>
+              </div>
             </div>
             {activeTab === "chats" && (
               <button
@@ -461,11 +486,17 @@ export function ChatApp({
                 characters={filteredCharacters}
                 onSelect={openCharacter}
               />
+            ) : profileView === "traveler" ? (
+              <TravelerPickerPanel
+                travelerGender={travelerGender}
+                onTravelerChange={updateTravelerGender}
+                onComplete={() => setProfileView("root")}
+              />
             ) : (
               <ProfilePanel
                 user={{ displayName: "旅行者", travelerGender }}
                 conversations={conversations}
-                onTravelerChange={updateTravelerGender}
+                onOpenTravelerPicker={() => setProfileView("traveler")}
               />
             )}
           </div>
@@ -474,19 +505,28 @@ export function ChatApp({
               active={activeTab === "chats"}
               label="聊天"
               icon={<MessageCircleMore size={21} />}
-              onClick={() => setActiveTab("chats")}
+              onClick={() => {
+                setActiveTab("chats");
+                setProfileView("root");
+              }}
             />
             <TabButton
               active={activeTab === "contacts"}
               label="通讯录"
               icon={<ContactRound size={21} />}
-              onClick={() => setActiveTab("contacts")}
+              onClick={() => {
+                setActiveTab("contacts");
+                setProfileView("root");
+              }}
             />
             <TabButton
               active={activeTab === "profile"}
               label="我的"
               icon={<UserRound size={21} />}
-              onClick={() => setActiveTab("profile")}
+              onClick={() => {
+                setActiveTab("profile");
+                setProfileView("root");
+              }}
             />
           </nav>
         </aside>
@@ -704,30 +744,13 @@ function ContactList({
 function ProfilePanel({
   user,
   conversations,
-  onTravelerChange,
+  onOpenTravelerPicker,
 }: {
   user: { displayName: string; travelerGender: TravelerGender };
   conversations: Conversation[];
-  onTravelerChange: (gender: TravelerGender) => Promise<void>;
+  onOpenTravelerPicker: () => void;
 }) {
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
   const traveler = TRAVELERS[user.travelerGender];
-
-  async function selectTraveler(gender: TravelerGender) {
-    if (saving || gender === user.travelerGender) return;
-    setSaving(true);
-    setSaveError("");
-    try {
-      await onTravelerChange(gender);
-    } catch (profileError) {
-      setSaveError(
-        profileError instanceof Error ? profileError.message : "保存失败",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="profile-panel">
@@ -747,41 +770,27 @@ function ProfilePanel({
           <small>{traveler.name} · {traveler.label}</small>
         </span>
       </div>
-      <section className="traveler-setting" aria-labelledby="traveler-title">
-        <div className="setting-heading">
-          <strong id="traveler-title">选择旅行者</strong>
-          <small>聊天头像会立即同步</small>
-        </div>
-        <div className="traveler-picker">
-          {(Object.entries(TRAVELERS) as Array<
-            [TravelerGender, (typeof TRAVELERS)[TravelerGender]]
-          >).map(([gender, option]) => (
-            <button
-              key={gender}
-              type="button"
-              className={user.travelerGender === gender ? "active" : ""}
-              disabled={saving}
-              aria-pressed={user.travelerGender === gender}
-              onClick={() => void selectTraveler(gender)}
-            >
-              <Image
-                src={option.avatarUrl}
-                alt=""
-                width={40}
-                height={40}
-                unoptimized
-              />
-              <span>
-                <strong>{option.name}</strong>
-                <small>{option.label}</small>
-              </span>
-              {user.travelerGender === gender && <Check size={17} />}
-            </button>
-          ))}
-        </div>
-        {saveError && <p className="profile-error" role="alert">{saveError}</p>}
-      </section>
       <div className="settings-group">
+        <button
+          className="setting-row setting-action"
+          type="button"
+          onClick={onOpenTravelerPicker}
+        >
+          <span className="setting-avatar traveler-avatar">
+            <Image
+              src={traveler.avatarUrl}
+              alt=""
+              width={36}
+              height={36}
+              unoptimized
+            />
+          </span>
+          <span className="setting-copy">
+            <strong>旅行者形象</strong>
+            <small>{traveler.name} · {traveler.label}</small>
+          </span>
+          <ChevronRight className="setting-trailing" size={18} />
+        </button>
         <div className="setting-row">
           <ShieldCheck size={20} />
           <span>
@@ -796,12 +805,103 @@ function ProfilePanel({
             <small>记录已安全保存在云端</small>
           </span>
         </div>
+        <a
+          className="setting-row setting-action"
+          href="https://github.com/uinaqx/Genshin_chat"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <Github size={20} />
+          <span className="setting-copy">
+            <strong>GitHub 开源</strong>
+            <small>查看源码、版本记录与发行说明</small>
+          </span>
+          <ExternalLink className="setting-trailing" size={17} />
+        </a>
       </div>
       <a className="signout-link" href="/api/auth/logout">
         <LogOut size={18} />
         退出登录
       </a>
-      <p className="version-label">提瓦特微信 Web · 2.0.0</p>
+      <p className="version-label">提瓦特微信 Web · 2.1.0</p>
+    </div>
+  );
+}
+
+function TravelerPickerPanel({
+  travelerGender,
+  onTravelerChange,
+  onComplete,
+}: {
+  travelerGender: TravelerGender;
+  onTravelerChange: (gender: TravelerGender) => Promise<void>;
+  onComplete: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  async function selectTraveler(gender: TravelerGender) {
+    if (saving) return;
+    if (gender === travelerGender) {
+      onComplete();
+      return;
+    }
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onTravelerChange(gender);
+      onComplete();
+    } catch (profileError) {
+      setSaveError(
+        profileError instanceof Error ? profileError.message : "保存失败",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="traveler-picker-page">
+      <p className="traveler-picker-intro">
+        选择你在提瓦特微信中的形象。头像会同步到所有私聊和群聊消息。
+      </p>
+      <div className="traveler-choice-list" role="radiogroup" aria-label="旅行者形象">
+        {(Object.entries(TRAVELERS) as Array<
+          [TravelerGender, (typeof TRAVELERS)[TravelerGender]]
+        >).map(([gender, option]) => {
+          const active = travelerGender === gender;
+          return (
+            <button
+              key={gender}
+              type="button"
+              className={active ? "active" : ""}
+              disabled={saving}
+              role="radio"
+              aria-checked={active}
+              onClick={() => void selectTraveler(gender)}
+            >
+              <Image
+                src={option.avatarUrl}
+                alt={`${option.name}头像`}
+                width={76}
+                height={76}
+                unoptimized
+              />
+              <span>
+                <strong>{option.name}</strong>
+                <small>{option.label}</small>
+              </span>
+              <span className="traveler-check" aria-hidden="true">
+                {active && <Check size={17} />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {saveError && <p className="profile-error" role="alert">{saveError}</p>}
+      <p className="traveler-picker-note">
+        此设置只改变旅行者头像，不会影响已有聊天记录。
+      </p>
     </div>
   );
 }

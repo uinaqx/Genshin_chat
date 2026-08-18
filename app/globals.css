@@ -338,6 +338,32 @@ button {
   line-height: 1.1;
 }
 
+.sidebar-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-heading > div {
+  min-width: 0;
+}
+
+.profile-back-button {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
 .icon-button {
   display: inline-grid;
   width: 40px;
@@ -580,10 +606,11 @@ button {
   z-index: 6;
   display: grid;
   width: 100%;
+  height: 62px;
   min-height: 62px;
   flex: 0 0 auto;
   grid-template-columns: repeat(3, 1fr);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: 0;
   border-top: 1px solid var(--line);
   background: rgba(249, 249, 251, 0.86);
   backdrop-filter: blur(22px) saturate(180%);
@@ -592,12 +619,13 @@ button {
 
 .tab-bar button {
   display: flex;
-  min-height: 54px;
+  height: 61px;
+  min-height: 0;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   gap: 3px;
-  padding-top: 6px;
+  padding: 6px 0 4px;
   border: 0;
   background: transparent;
   color: #8e8e93;
@@ -939,91 +967,104 @@ button {
   object-fit: cover;
 }
 
-.traveler-setting {
-  margin-bottom: 16px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.72);
+.traveler-picker-page {
+  padding: 16px 16px 28px;
 }
 
-.setting-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.setting-heading strong {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.setting-heading small,
-.traveler-picker small {
+.traveler-picker-intro,
+.traveler-picker-note {
+  margin: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.65;
 }
 
-.traveler-picker {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.traveler-picker-intro {
+  padding: 0 4px 14px;
 }
 
-.traveler-picker button {
-  position: relative;
+.traveler-choice-list {
   display: grid;
+  gap: 10px;
+}
+
+.traveler-choice-list button {
+  display: grid;
+  width: 100%;
   min-width: 0;
-  min-height: 64px;
-  grid-template-columns: 40px minmax(0, 1fr) 18px;
+  min-height: 104px;
+  grid-template-columns: 76px minmax(0, 1fr) 24px;
   align-items: center;
-  gap: 9px;
-  padding: 8px;
+  gap: 14px;
+  padding: 13px;
   border: 1px solid var(--line);
-  border-radius: 13px;
-  background: rgba(248, 248, 250, 0.72);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
   text-align: left;
   cursor: pointer;
+  box-shadow: 0 8px 22px rgba(35, 36, 38, 0.04);
   transition:
     border-color 160ms var(--ease),
     background 160ms var(--ease),
     transform 160ms var(--ease);
 }
 
-.traveler-picker button.active {
-  border-color: rgba(52, 199, 89, 0.45);
-  background: rgba(235, 251, 239, 0.78);
-  color: var(--accent-strong);
+.traveler-choice-list button.active {
+  border-color: rgba(52, 199, 89, 0.48);
+  background: rgba(237, 251, 241, 0.88);
 }
 
-.traveler-picker button:active:not(:disabled) {
-  transform: scale(0.98);
+.traveler-choice-list button:active:not(:disabled) {
+  transform: scale(0.985);
 }
 
-.traveler-picker button:disabled {
+.traveler-choice-list button:disabled {
   cursor: wait;
 }
 
-.traveler-picker img {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+.traveler-choice-list img {
+  width: 76px;
+  height: 76px;
+  border-radius: 17px;
   background: #ececf0;
   object-fit: cover;
 }
 
-.traveler-picker button > span {
+.traveler-choice-list button > span:nth-child(2) {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 5px;
 }
 
-.traveler-picker button > span strong {
-  font-size: 14px;
-  font-weight: 600;
+.traveler-choice-list strong {
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.traveler-choice-list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.traveler-check {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: white;
+}
+
+.traveler-choice-list button.active .traveler-check {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.traveler-picker-note {
+  padding: 14px 4px 0;
 }
 
 .profile-error {
@@ -1067,6 +1108,21 @@ button {
   padding: 14px 16px;
 }
 
+.setting-action {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.setting-action:active {
+  background: rgba(120, 120, 128, 0.08);
+}
+
 .setting-row + .setting-row {
   border-top: 1px solid var(--line);
 }
@@ -1075,10 +1131,36 @@ button {
   color: var(--accent-strong);
 }
 
+.setting-avatar {
+  display: block;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.setting-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .setting-row span {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.setting-row .setting-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.setting-row .setting-trailing {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--soft);
 }
 
 .setting-row strong {
@@ -1425,7 +1507,13 @@ button {
   }
 
   .tab-bar {
-    min-height: 58px;
+    height: calc(62px + env(safe-area-inset-bottom));
+    min-height: calc(62px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .tab-bar button {
+    height: 61px;
   }
 }
 

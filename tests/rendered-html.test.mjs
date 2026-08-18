@@ -93,14 +93,19 @@ test("splits multi-sentence model output into durable chat bubbles", async () =>
   assert.match(chatRoute, /savedReplies = bubbleReplies\.map/);
 });
 
-test("publishes the 2.0.0 release and prominent web entry", async () => {
-  const [manifestText, readme, client] = await Promise.all([
+test("publishes the 2.1.0 profile navigation release", async () => {
+  const [manifestText, readme, client, styles] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../app/chat/chat-app.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
-  assert.equal(JSON.parse(manifestText).version, "2.0.0");
+  assert.equal(JSON.parse(manifestText).version, "2.1.0");
   assert.match(readme.slice(0, 300), /https:\/\/teyvat-wechat\.onrender\.com/);
-  assert.match(readme, /### 2\.0\.0 - 2026-08-18/);
-  assert.match(client, /提瓦特微信 Web · 2\.0\.0/);
+  assert.match(readme, /### 2\.1\.0 - 2026-08-18/);
+  assert.match(client, /提瓦特微信 Web · 2\.1\.0/);
+  assert.match(client, /profileView === "traveler"/);
+  assert.match(client, /https:\/\/github\.com\/uinaqx\/Genshin_chat/);
+  assert.match(styles, /\.tab-bar\s*\{[\s\S]*?height:\s*62px/);
+  assert.match(styles, /\.tab-bar button\s*\{[\s\S]*?min-height:\s*0/);
 });
