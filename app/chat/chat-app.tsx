@@ -18,6 +18,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 type Character = {
@@ -50,11 +51,25 @@ type Conversation = {
 };
 
 type Tab = "chats" | "contacts" | "profile";
+type TravelerGender = "aether" | "lumine";
+
+const TRAVELERS = {
+  aether: {
+    name: "空",
+    label: "男旅行者",
+    avatarUrl: "https://gi.yatta.moe/assets/UI/UI_AvatarIcon_PlayerBoy.png",
+  },
+  lumine: {
+    name: "荧",
+    label: "女旅行者",
+    avatarUrl: "https://gi.yatta.moe/assets/UI/UI_AvatarIcon_PlayerGirl.png",
+  },
+} as const;
 
 export function ChatApp({
   user,
 }: {
-  user: { displayName: string; initials: string };
+  user: { displayName: string; travelerGender: TravelerGender };
 }) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -67,6 +82,9 @@ export function ChatApp({
   const [error, setError] = useState("");
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const [travelerGender, setTravelerGender] = useState<TravelerGender>(
+    user.travelerGender,
+  );
   const messagesRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef(new Set<string>());
   const pendingReplyIdsRef = useRef(new Map<string, string[]>());
@@ -82,6 +100,8 @@ export function ChatApp({
 
   useEffect(() => {
     void loadWorkspace();
+    // Initial hydration runs once; later refreshes are triggered explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useLayoutEffect(() => {
@@ -271,8 +291,11 @@ export function ChatApp({
     } catch (replyError) {
       const retryCount = (retryCountsRef.current.get(conversationId) ?? 0) + 1;
       retryCountsRef.current.set(conversationId, retryCount);
+      const reason = (
+        replyError instanceof Error ? replyError.message : "回复暂时失败"
+      ).replace(/[。！!，,\s]+$/, "");
       setError(
-        `${replyError instanceof Error ? replyError.message : "回复暂时失败"}，消息已保存，稍后发送或重新打开页面时会自动续上。`,
+        `${reason}，消息已保存，稍后发送或重新打开页面时会自动续上。`,
       );
     } finally {
       processingRef.current.delete(conversationId);
@@ -305,6 +328,22 @@ export function ChatApp({
     );
     setSelectedId(null);
     setShowConversationMenu(false);
+  }
+
+  async function updateTravelerGender(nextGender: TravelerGender) {
+    if (nextGender === travelerGender) return;
+    const previousGender = travelerGender;
+    setTravelerGender(nextGender);
+    const response = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ travelerGender: nextGender }),
+    });
+    const payload = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      setTravelerGender(previousGender);
+      throw new Error(payload.error || "旅行者头像保存失败");
+    }
   }
 
   function appendMessages(conversationId: string, messages: Message[]) {
@@ -423,7 +462,11 @@ export function ChatApp({
                 onSelect={openCharacter}
               />
             ) : (
-              <ProfilePanel user={user} conversations={conversations} />
+              <ProfilePanel
+                user={{ displayName: "旅行者", travelerGender }}
+                conversations={conversations}
+                onTravelerChange={updateTravelerGender}
+              />
             )}
           </div>
           <nav className="tab-bar" aria-label="主导航">
@@ -517,7 +560,7 @@ export function ChatApp({
                       key={message.id}
                       message={message}
                       character={message.characterId ? characterMap.get(message.characterId) : null}
-                      userInitial={user.initials}
+                      userAvatarUrl={TRAVELERS[travelerGender].avatarUrl}
                       showName={selectedConversation.type === "group"}
                     />
                   ))
@@ -632,6 +675,9 @@ function ContactList({
   characters: Character[];
   onSelect: (character: Character) => void;
 }) {
+  if (characters.length === 0) {
+    return <EmptyList text="没有找到匹配的角色。" />;
+  }
   return (
     <div className="contact-list">
       {characters.map((character) => (
@@ -658,19 +704,83 @@ function ContactList({
 function ProfilePanel({
   user,
   conversations,
+  onTravelerChange,
 }: {
-  user: { displayName: string; initials: string };
+  user: { displayName: string; travelerGender: TravelerGender };
   conversations: Conversation[];
+  onTravelerChange: (gender: TravelerGender) => Promise<void>;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const traveler = TRAVELERS[user.travelerGender];
+
+  async function selectTraveler(gender: TravelerGender) {
+    if (saving || gender === user.travelerGender) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onTravelerChange(gender);
+    } catch (profileError) {
+      setSaveError(
+        profileError instanceof Error ? profileError.message : "保存失败",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="profile-panel">
       <div className="account-row">
-        <span className="user-avatar large">{user.initials}</span>
+        <span className="user-avatar large traveler-avatar">
+          <Image
+            src={traveler.avatarUrl}
+            alt={`${traveler.name}头像`}
+            width={60}
+            height={60}
+            priority
+            unoptimized
+          />
+        </span>
         <span>
           <strong>{user.displayName}</strong>
-          <small>旅行者</small>
+          <small>{traveler.name} · {traveler.label}</small>
         </span>
       </div>
+      <section className="traveler-setting" aria-labelledby="traveler-title">
+        <div className="setting-heading">
+          <strong id="traveler-title">选择旅行者</strong>
+          <small>聊天头像会立即同步</small>
+        </div>
+        <div className="traveler-picker">
+          {(Object.entries(TRAVELERS) as Array<
+            [TravelerGender, (typeof TRAVELERS)[TravelerGender]]
+          >).map(([gender, option]) => (
+            <button
+              key={gender}
+              type="button"
+              className={user.travelerGender === gender ? "active" : ""}
+              disabled={saving}
+              aria-pressed={user.travelerGender === gender}
+              onClick={() => void selectTraveler(gender)}
+            >
+              <Image
+                src={option.avatarUrl}
+                alt=""
+                width={40}
+                height={40}
+                unoptimized
+              />
+              <span>
+                <strong>{option.name}</strong>
+                <small>{option.label}</small>
+              </span>
+              {user.travelerGender === gender && <Check size={17} />}
+            </button>
+          ))}
+        </div>
+        {saveError && <p className="profile-error" role="alert">{saveError}</p>}
+      </section>
       <div className="settings-group">
         <div className="setting-row">
           <ShieldCheck size={20} />
@@ -691,7 +801,7 @@ function ProfilePanel({
         <LogOut size={18} />
         退出登录
       </a>
-      <p className="version-label">提瓦特微信 Web · 1.2.0</p>
+      <p className="version-label">提瓦特微信 Web · 2.0.0</p>
     </div>
   );
 }
@@ -699,12 +809,12 @@ function ProfilePanel({
 function MessageBubble({
   message,
   character,
-  userInitial,
+  userAvatarUrl,
   showName,
 }: {
   message: Message;
   character?: Character | null;
-  userInitial: string;
+  userAvatarUrl: string;
   showName: boolean;
 }) {
   const isUser = message.role === "user";
@@ -719,7 +829,17 @@ function MessageBubble({
         )}
         <div className="bubble">{message.content}</div>
       </div>
-      {isUser && <span className="user-avatar message">{userInitial}</span>}
+      {isUser && (
+        <span className="user-avatar message traveler-avatar">
+          <Image
+            src={userAvatarUrl}
+            alt="旅行者头像"
+            width={36}
+            height={36}
+            unoptimized
+          />
+        </span>
+      )}
     </div>
   );
 }
@@ -748,7 +868,18 @@ function ConversationAvatar({
   return (
     <span className={`group-avatar avatar-${size}`}>
       {members.map((member) => (
-        <img key={member.id} src={member.avatarUrl} alt="" />
+        member.avatarUrl ? (
+          <Image
+            key={member.id}
+            src={member.avatarUrl}
+            alt=""
+            width={48}
+            height={48}
+            unoptimized
+          />
+        ) : (
+          <span key={member.id}>{member.name.slice(0, 1)}</span>
+        )
       ))}
     </span>
   );
@@ -763,11 +894,14 @@ function Avatar({
 }) {
   if (character?.avatarUrl) {
     return (
-      <img
+      <Image
         className={`avatar avatar-${size}`}
         src={character.avatarUrl}
         alt={`${character.name}头像`}
+        width={72}
+        height={72}
         loading="lazy"
+        unoptimized
       />
     );
   }

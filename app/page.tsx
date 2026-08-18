@@ -10,23 +10,10 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const portraitUrls = [
-  "https://genshin.jmp.blue/characters/nahida/icon-big",
-  "https://genshin.jmp.blue/characters/furina/icon-big",
-  "https://genshin.jmp.blue/characters/zhongli/icon-big",
-  "https://genshin.jmp.blue/characters/hu-tao/icon-big",
-  "https://genshin.jmp.blue/characters/venti/icon-big",
-];
-
 export default async function Home() {
   const viewer = await getViewer();
   return (
     <main className="login-page">
-      <div className="login-portrait-field" aria-hidden="true">
-        {portraitUrls.map((url, index) => (
-          <img key={url} src={url} alt="" className={`ambient-avatar ambient-${index + 1}`} />
-        ))}
-      </div>
       <section className="login-sheet" aria-labelledby="login-title">
         <div className="brand-mark">
           <MessageCircleMore aria-hidden="true" size={26} strokeWidth={1.8} />

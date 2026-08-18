@@ -9,11 +9,12 @@ export type Viewer = {
   displayName: string;
   email: string;
   fullName: string | null;
+  travelerGender: "aether" | "lumine";
 };
 
 type ViewerRow = {
   email: string;
-  display_name: string;
+  traveler_gender: string;
 };
 
 export function hashSessionToken(token: string) {
@@ -26,7 +27,7 @@ export async function getViewer(): Promise<Viewer | null> {
   await ensureSchema();
   const { DB } = runtimeEnv();
   const viewer = await DB.prepare(
-    `SELECT u.email, u.display_name
+    `SELECT u.email, u.traveler_gender
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?`,
@@ -34,10 +35,12 @@ export async function getViewer(): Promise<Viewer | null> {
     .bind(hashSessionToken(token), new Date().toISOString())
     .first<ViewerRow>();
   if (!viewer) return null;
+  const travelerGender = viewer.traveler_gender === "lumine" ? "lumine" : "aether";
   return {
-    displayName: viewer.display_name,
+    displayName: "旅行者",
     email: viewer.email,
-    fullName: viewer.display_name,
+    fullName: "旅行者",
+    travelerGender,
   };
 }
 

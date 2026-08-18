@@ -1,4 +1,5 @@
 import { characterById } from "../../lib/characters";
+import { splitReplyIntoBubbles } from "../../lib/reply-bubbles";
 import { apiError, ensureSchema, runtimeEnv } from "../../lib/storage";
 import { getViewer } from "../../lib/viewer";
 
@@ -115,7 +116,13 @@ export async function POST(request: Request) {
         ? await generateGroupReplies(memberIds, history)
         : await generateSingleReplies(memberIds[0], history);
 
-    const savedReplies = replies.map((reply, index) => ({
+    const bubbleReplies = replies.flatMap((reply) =>
+      splitReplyIntoBubbles(reply.content).map((content) => ({
+        ...reply,
+        content,
+      })),
+    );
+    const savedReplies = bubbleReplies.map((reply, index) => ({
       id: crypto.randomUUID(),
       role: "assistant" as const,
       ...reply,

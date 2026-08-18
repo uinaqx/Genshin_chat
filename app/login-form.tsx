@@ -21,7 +21,6 @@ export function LoginForm() {
       body: JSON.stringify({
         email: data.get("email"),
         password: data.get("password"),
-        displayName: data.get("displayName"),
       }),
     }).catch(() => null);
     if (response?.ok) {
@@ -63,12 +62,6 @@ export function LoginForm() {
           注册
         </button>
       </div>
-      {mode === "register" && (
-        <label className="auth-field">
-          <span>昵称</span>
-          <input name="displayName" autoComplete="nickname" maxLength={24} required />
-        </label>
-      )}
       <label className="auth-field">
         <span>邮箱</span>
         <input name="email" type="email" autoComplete="email" required />

@@ -133,9 +133,14 @@ async function createSchema(): Promise<void> {
         id TEXT PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,
         display_name TEXT NOT NULL,
+        traveler_gender TEXT NOT NULL DEFAULT 'aether',
         password_hash TEXT NOT NULL,
         created_at TEXT NOT NULL
       )
+    `),
+    DB.prepare(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS traveler_gender TEXT NOT NULL DEFAULT 'aether'
     `),
     DB.prepare(`
       CREATE TABLE IF NOT EXISTS sessions (

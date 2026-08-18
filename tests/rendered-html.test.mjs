@@ -12,7 +12,9 @@ test("ships independent account login and registration", async () => {
   assert.match(page, /提瓦特微信/);
   assert.match(form, /api\/auth\/\$\{mode\}/);
   assert.match(form, /创建账号/);
+  assert.doesNotMatch(form, /name="displayName"/);
   assert.match(viewer, /teyvat_session/);
+  assert.match(viewer, /travelerGender/);
   assert.match(styles, /backdrop-filter:\s*blur/);
   assert.doesNotMatch(`${page}\n${viewer}`, /signin-with-chatgpt|oai-authenticated/);
 });
@@ -59,17 +61,46 @@ test("keeps chat input available while durable reply batches run", async () => {
   assert.match(chatRoute, /claimReplyJob/);
   assert.match(storage, /CREATE TABLE IF NOT EXISTS reply_jobs/);
   assert.match(styles, /\.tab-bar\s*\{[\s\S]*?z-index:\s*6/);
+  assert.match(styles, /grid-template-areas:[\s\S]*?"tabs"/);
 });
 
 test("ships the current released character catalog", async () => {
   const data = JSON.parse(
     await readFile(new URL("../data/characters.json", import.meta.url), "utf8"),
   );
-  assert.equal(data.characters.length, 121);
+  assert.equal(data.characters.length, 132);
   assert.equal(
     data.characters.filter((character) => !character.id.startsWith("traveler-"))
       .length,
-    116,
+    127,
   );
-  assert.equal(data.characters.at(-1).id, "sandrone");
+  assert.equal(data.characters.at(-1).id, "tsaritsa");
+});
+
+test("splits multi-sentence model output into durable chat bubbles", async () => {
+  const [{ splitReplyIntoBubbles }, chatRoute] = await Promise.all([
+    import(new URL("../app/lib/reply-bubbles.ts", import.meta.url)),
+    readFile(new URL("../app/api/chat/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.deepEqual(
+    splitReplyIntoBubbles("先等等。\n我马上回来！别走？"),
+    ["先等等。", "我马上回来！", "别走？"],
+  );
+  assert.deepEqual(splitReplyIntoBubbles("版本是 1.5，网址 example.com。"), [
+    "版本是 1.5，网址 example.com。",
+  ]);
+  assert.match(chatRoute, /splitReplyIntoBubbles\(reply\.content\)/);
+  assert.match(chatRoute, /savedReplies = bubbleReplies\.map/);
+});
+
+test("publishes the 2.0.0 release and prominent web entry", async () => {
+  const [manifestText, readme, client] = await Promise.all([
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../README.md", import.meta.url), "utf8"),
+    readFile(new URL("../app/chat/chat-app.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.equal(JSON.parse(manifestText).version, "2.0.0");
+  assert.match(readme.slice(0, 300), /https:\/\/teyvat-wechat\.onrender\.com/);
+  assert.match(readme, /### 2\.0\.0 - 2026-08-18/);
+  assert.match(client, /提瓦特微信 Web · 2\.0\.0/);
 });

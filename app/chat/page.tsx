@@ -14,7 +14,7 @@ export default async function ChatPage() {
     <ChatApp
       user={{
         displayName: viewer.displayName,
-        initials: viewer.displayName.slice(0, 1).toUpperCase(),
+        travelerGender: viewer.travelerGender,
       }}
     />
   );
