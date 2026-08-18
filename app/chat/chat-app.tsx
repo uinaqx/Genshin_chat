@@ -11,6 +11,7 @@ import {
   MessageCircleMore,
   MoreHorizontal,
   Plus,
+  RefreshCw,
   Search,
   Send,
   ShieldCheck,
@@ -53,7 +54,6 @@ type Conversation = {
 };
 
 type Tab = "chats" | "contacts" | "profile";
-type ProfileView = "root" | "traveler";
 type TravelerGender = "aether" | "lumine";
 
 const TRAVELERS = {
@@ -85,7 +85,6 @@ export function ChatApp({
   const [error, setError] = useState("");
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
-  const [profileView, setProfileView] = useState<ProfileView>("root");
   const [travelerGender, setTravelerGender] = useState<TravelerGender>(
     user.travelerGender,
   );
@@ -414,30 +413,9 @@ export function ChatApp({
       <div className={`messenger-shell ${selectedConversation ? "has-chat" : ""}`}>
         <aside className="sidebar">
           <header className="sidebar-header">
-            <div className="sidebar-heading">
-              {activeTab === "profile" && profileView === "traveler" && (
-                <button
-                  className="profile-back-button"
-                  type="button"
-                  aria-label="返回我的"
-                  title="返回我的"
-                  onClick={() => setProfileView("root")}
-                >
-                  <ArrowLeft size={21} />
-                </button>
-              )}
-              <div>
-                <p className="section-kicker">
-                  {activeTab === "profile" && profileView === "traveler"
-                    ? "我的"
-                    : "提瓦特微信"}
-                </p>
-                <h1>
-                  {activeTab === "profile" && profileView === "traveler"
-                    ? "选择旅行者"
-                    : tabTitle(activeTab)}
-                </h1>
-              </div>
+            <div>
+              <p className="section-kicker">提瓦特微信</p>
+              <h1>{tabTitle(activeTab)}</h1>
             </div>
             {activeTab === "chats" && (
               <button
@@ -486,17 +464,11 @@ export function ChatApp({
                 characters={filteredCharacters}
                 onSelect={openCharacter}
               />
-            ) : profileView === "traveler" ? (
-              <TravelerPickerPanel
-                travelerGender={travelerGender}
-                onTravelerChange={updateTravelerGender}
-                onComplete={() => setProfileView("root")}
-              />
             ) : (
               <ProfilePanel
                 user={{ displayName: "旅行者", travelerGender }}
                 conversations={conversations}
-                onOpenTravelerPicker={() => setProfileView("traveler")}
+                onTravelerChange={updateTravelerGender}
               />
             )}
           </div>
@@ -505,28 +477,19 @@ export function ChatApp({
               active={activeTab === "chats"}
               label="聊天"
               icon={<MessageCircleMore size={21} />}
-              onClick={() => {
-                setActiveTab("chats");
-                setProfileView("root");
-              }}
+              onClick={() => setActiveTab("chats")}
             />
             <TabButton
               active={activeTab === "contacts"}
               label="通讯录"
               icon={<ContactRound size={21} />}
-              onClick={() => {
-                setActiveTab("contacts");
-                setProfileView("root");
-              }}
+              onClick={() => setActiveTab("contacts")}
             />
             <TabButton
               active={activeTab === "profile"}
               label="我的"
               icon={<UserRound size={21} />}
-              onClick={() => {
-                setActiveTab("profile");
-                setProfileView("root");
-              }}
+              onClick={() => setActiveTab("profile")}
             />
           </nav>
         </aside>
@@ -744,13 +707,35 @@ function ContactList({
 function ProfilePanel({
   user,
   conversations,
-  onOpenTravelerPicker,
+  onTravelerChange,
 }: {
   user: { displayName: string; travelerGender: TravelerGender };
   conversations: Conversation[];
-  onOpenTravelerPicker: () => void;
+  onTravelerChange: (gender: TravelerGender) => Promise<void>;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const traveler = TRAVELERS[user.travelerGender];
+
+  async function toggleTraveler() {
+    if (saving) return;
+    const nextGender: TravelerGender =
+      user.travelerGender === "aether" ? "lumine" : "aether";
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onTravelerChange(nextGender);
+    } catch (profileError) {
+      setSaveError(
+        profileError instanceof Error ? profileError.message : "保存失败",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const nextTraveler =
+    user.travelerGender === "aether" ? TRAVELERS.lumine : TRAVELERS.aether;
 
   return (
     <div className="profile-panel">
@@ -765,32 +750,23 @@ function ProfilePanel({
             unoptimized
           />
         </span>
-        <span>
+        <span className="account-copy">
           <strong>{user.displayName}</strong>
           <small>{traveler.name} · {traveler.label}</small>
         </span>
-      </div>
-      <div className="settings-group">
         <button
-          className="setting-row setting-action"
+          className={`traveler-switch-button ${saving ? "is-saving" : ""}`}
           type="button"
-          onClick={onOpenTravelerPicker}
+          disabled={saving}
+          aria-label={`切换为${nextTraveler.name}`}
+          title={`切换为${nextTraveler.name} · ${nextTraveler.label}`}
+          onClick={() => void toggleTraveler()}
         >
-          <span className="setting-avatar traveler-avatar">
-            <Image
-              src={traveler.avatarUrl}
-              alt=""
-              width={36}
-              height={36}
-              unoptimized
-            />
-          </span>
-          <span className="setting-copy">
-            <strong>旅行者形象</strong>
-            <small>{traveler.name} · {traveler.label}</small>
-          </span>
-          <ChevronRight className="setting-trailing" size={18} />
+          <RefreshCw size={17} aria-hidden="true" />
         </button>
+      </div>
+      {saveError && <p className="profile-error" role="alert">{saveError}</p>}
+      <div className="settings-group">
         <div className="setting-row">
           <ShieldCheck size={20} />
           <span>
@@ -823,85 +799,7 @@ function ProfilePanel({
         <LogOut size={18} />
         退出登录
       </a>
-      <p className="version-label">提瓦特微信 Web · 2.1.0</p>
-    </div>
-  );
-}
-
-function TravelerPickerPanel({
-  travelerGender,
-  onTravelerChange,
-  onComplete,
-}: {
-  travelerGender: TravelerGender;
-  onTravelerChange: (gender: TravelerGender) => Promise<void>;
-  onComplete: () => void;
-}) {
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-
-  async function selectTraveler(gender: TravelerGender) {
-    if (saving) return;
-    if (gender === travelerGender) {
-      onComplete();
-      return;
-    }
-    setSaving(true);
-    setSaveError("");
-    try {
-      await onTravelerChange(gender);
-      onComplete();
-    } catch (profileError) {
-      setSaveError(
-        profileError instanceof Error ? profileError.message : "保存失败",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="traveler-picker-page">
-      <p className="traveler-picker-intro">
-        选择你在提瓦特微信中的形象。头像会同步到所有私聊和群聊消息。
-      </p>
-      <div className="traveler-choice-list" role="radiogroup" aria-label="旅行者形象">
-        {(Object.entries(TRAVELERS) as Array<
-          [TravelerGender, (typeof TRAVELERS)[TravelerGender]]
-        >).map(([gender, option]) => {
-          const active = travelerGender === gender;
-          return (
-            <button
-              key={gender}
-              type="button"
-              className={active ? "active" : ""}
-              disabled={saving}
-              role="radio"
-              aria-checked={active}
-              onClick={() => void selectTraveler(gender)}
-            >
-              <Image
-                src={option.avatarUrl}
-                alt={`${option.name}头像`}
-                width={76}
-                height={76}
-                unoptimized
-              />
-              <span>
-                <strong>{option.name}</strong>
-                <small>{option.label}</small>
-              </span>
-              <span className="traveler-check" aria-hidden="true">
-                {active && <Check size={17} />}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {saveError && <p className="profile-error" role="alert">{saveError}</p>}
-      <p className="traveler-picker-note">
-        此设置只改变旅行者头像，不会影响已有聊天记录。
-      </p>
+      <p className="version-label">提瓦特微信 Web · 2.1.1</p>
     </div>
   );
 }
