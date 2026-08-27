@@ -93,7 +93,7 @@ test("splits multi-sentence model output into durable chat bubbles", async () =>
   assert.match(chatRoute, /savedReplies = bubbleReplies\.map/);
 });
 
-test("publishes the 2.2.0 character prompt release", async () => {
+test("publishes the 2.2.1 full character context release", async () => {
   const [manifestText, readme, client, styles, characterText, importText] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
@@ -107,10 +107,10 @@ test("publishes the 2.2.0 character prompt release", async () => {
   ]);
   const characterData = JSON.parse(characterText);
   const importManifest = JSON.parse(importText);
-  assert.equal(JSON.parse(manifestText).version, "2.2.0");
+  assert.equal(JSON.parse(manifestText).version, "2.2.1");
   assert.match(readme.slice(0, 300), /https:\/\/teyvat-wechat\.onrender\.com/);
-  assert.match(readme, /### 2\.2\.0 - 2026-08-27/);
-  assert.match(client, /提瓦特微信 Web · 2\.2\.0/);
+  assert.match(readme, /### 2\.2\.1 - 2026-08-27/);
+  assert.match(client, /提瓦特微信 Web · 2\.2\.1/);
   assert.equal(importManifest.files.length, 97);
   assert.equal(characterData.promptImport.importedCharacters, 97);
   assert.equal(characterData.promptImport.uncoveredCharacters.length, 30);
@@ -128,4 +128,55 @@ test("publishes the 2.2.0 character prompt release", async () => {
   assert.match(client, /https:\/\/github\.com\/uinaqx\/Genshin_chat/);
   assert.match(styles, /\.tab-bar\s*\{[\s\S]*?height:\s*62px/);
   assert.match(styles, /\.tab-bar button\s*\{[\s\S]*?min-height:\s*0/);
+});
+
+test("sends every imported character prompt to the model without truncation", async () => {
+  const [contextBuilder, characterText, chatRoute] = await Promise.all([
+    import(new URL("../app/lib/character-context.ts", import.meta.url)),
+    readFile(new URL("../data/characters.json", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/chat/route.ts", import.meta.url), "utf8"),
+  ]);
+  const characterData = JSON.parse(characterText);
+  const importedCharacters = characterData.characters.filter(
+    (character) =>
+      character.promptProvenance?.project === "DGP-Studio/Genshin.Skill",
+  );
+
+  assert.equal(importedCharacters.length, 97);
+  for (const character of importedCharacters) {
+    const singleContext = contextBuilder.buildSingleCharacterSystemPrompt(character);
+    const groupContext = contextBuilder.buildGroupCharacterSystemPrompt(
+      [character],
+      "旅行者：测试完整上下文",
+    );
+
+    for (const [mode, context] of [
+      ["私聊", singleContext],
+      ["群聊", groupContext],
+    ]) {
+      assert.ok(
+        context.includes(character.prompt),
+        `${character.name} 的${mode}请求缺少完整 Prompt`,
+      );
+      assert.ok(
+        context.includes(character.soulMd),
+        `${character.name} 的${mode}请求缺少完整 SoulMD`,
+      );
+      assert.ok(
+        context.includes(character.prompt.slice(-256)),
+        `${character.name} 的${mode} Prompt 末尾被截断`,
+      );
+      assert.ok(
+        context.includes(character.soulMd.slice(-256)),
+        `${character.name} 的${mode} SoulMD 末尾被截断`,
+      );
+    }
+  }
+
+  assert.match(chatRoute, /buildSingleCharacterSystemPrompt\(character\)/);
+  assert.match(
+    chatRoute,
+    /buildGroupCharacterSystemPrompt\(members, transcript\)/,
+  );
+  assert.doesNotMatch(chatRoute, /slice\(0,\s*(?:7000|4500|perMemberPromptLimit)/);
 });

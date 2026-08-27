@@ -32,7 +32,7 @@
 项目已将 [DGP-Studio/Genshin.Skill](https://github.com/DGP-Studio/Genshin.Skill) 在提交 `1abc5c9f8daa5a98ecc7e02472cb82ea1047d10e` 下的 97 份角色 `SKILL.md` 完整归档到 `third_party/Genshin.Skill/skills/`。原文采用 MIT 许可，版权与许可说明见 `third_party/Genshin.Skill/LICENSE` 和 `NOTICE.md`。
 
 - 每份上游正文会完整保存为对应角色的 SoulMD，不只截取摘要。
-- 应用会据此生成适合微信短消息的私聊 Prompt，以及更精简、可控制群聊 Token 成本的群聊 Prompt。
+- 应用会据此生成微信短消息适配规则；每次角色回复请求都会完整携带对应 Prompt 与 SoulMD，不进行字符截断。
 - 导入结果记录固定提交链接、原文件路径与 SHA-256 哈希，便于复核和后续更新。
 - 上游仓库没有覆盖的 30 名角色继续使用项目原有资料，不会被错误套用成其他角色。
 
@@ -94,6 +94,13 @@ Web Service 与 PostgreSQL 必须部署在同一区域。Blueprint 当前将两�
 - 对话、消息、队列和每日用量均按账号隔离。
 
 ## 更新记录
+
+### 2.2.1 - 2026-08-27
+
+- 修复角色资料虽已导入、但 API 请求仍截断上下文的问题：此前所有 97 名角色的 SoulMD 都只发送前 4500 字符，部分 Prompt 和群聊资料也会被截断。
+- 新增统一完整上下文构建器；私聊请求完整发送该角色的 Prompt 与 SoulMD，群聊请求完整发送所有群成员的群聊适配、Prompt 与 SoulMD。
+- 新增 97 角色逐项回归测试，同时检查私聊、群聊和每份资料末尾，防止以后重新出现静默截断。
+- 完整上下文会明显增加 API Token 消耗，尤其是成员较多的群聊；这是为确保角色设定完整生效而作出的明确调整。
 
 ### 2.2.0 - 2026-08-27
 
