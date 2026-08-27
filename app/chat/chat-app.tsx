@@ -799,7 +799,7 @@ function ProfilePanel({
         <LogOut size={18} />
         退出登录
       </a>
-      <p className="version-label">提瓦特微信 Web · 2.1.1</p>
+      <p className="version-label">提瓦特微信 Web · 2.2.0</p>
     </div>
   );
 }

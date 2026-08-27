@@ -1,6 +1,6 @@
 {
   "name": "teyvat-wechat-web",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -10,7 +10,9 @@
     "build": "next build",
     "start": "next start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint app tests --ignore-pattern .next"
+    "lint": "eslint app tests tools --ignore-pattern .next",
+    "audit:dgp-import": "node tools/audit-dgp-import.mjs",
+    "import:dgp-skills": "node tools/import-dgp-skills.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

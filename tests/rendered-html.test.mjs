@@ -93,17 +93,34 @@ test("splits multi-sentence model output into durable chat bubbles", async () =>
   assert.match(chatRoute, /savedReplies = bubbleReplies\.map/);
 });
 
-test("publishes the 2.1.1 compact traveler switch release", async () => {
-  const [manifestText, readme, client, styles] = await Promise.all([
+test("publishes the 2.2.0 character prompt release", async () => {
+  const [manifestText, readme, client, styles, characterText, importText] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../app/chat/chat-app.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../data/characters.json", import.meta.url), "utf8"),
+    readFile(
+      new URL("../third_party/Genshin.Skill/MANIFEST.json", import.meta.url),
+      "utf8",
+    ),
   ]);
-  assert.equal(JSON.parse(manifestText).version, "2.1.1");
+  const characterData = JSON.parse(characterText);
+  const importManifest = JSON.parse(importText);
+  assert.equal(JSON.parse(manifestText).version, "2.2.0");
   assert.match(readme.slice(0, 300), /https:\/\/teyvat-wechat\.onrender\.com/);
-  assert.match(readme, /### 2\.1\.1 - 2026-08-18/);
-  assert.match(client, /提瓦特微信 Web · 2\.1\.1/);
+  assert.match(readme, /### 2\.2\.0 - 2026-08-27/);
+  assert.match(client, /提瓦特微信 Web · 2\.2\.0/);
+  assert.equal(importManifest.files.length, 97);
+  assert.equal(characterData.promptImport.importedCharacters, 97);
+  assert.equal(characterData.promptImport.uncoveredCharacters.length, 30);
+  assert.equal(
+    characterData.characters.filter(
+      (character) =>
+        character.promptProvenance?.project === "DGP-Studio/Genshin.Skill",
+    ).length,
+    97,
+  );
   assert.match(client, /className=\{`traveler-switch-button/);
   assert.match(client, /async function toggleTraveler/);
   assert.doesNotMatch(client, /TravelerPickerPanel|profileView/);

@@ -9,6 +9,7 @@
 - 仅使用邮箱和密码注册登录，密码使用 bcrypt 哈希保存
 - HttpOnly 会话 Cookie 与账号级数据隔离
 - 127 名角色通讯录，已同步至至冬 7.0《骤雪》公开角色
+- 97 名角色使用 DGP-Studio/Genshin.Skill 的完整角色思维设定，并分别适配私聊与群聊
 - 私聊和自定义群聊
 - 微信式短消息；多句模型回复会在本地拆成连续独立气泡并持久化
 - 回复期间仍可连续发送，新消息会合并为下一批请求
@@ -25,6 +26,22 @@
 - bcrypt 密码哈希
 - DeepSeek OpenAI 兼容接口
 - Render Web Service + Render Postgres
+
+## 角色提示词来源
+
+项目已将 [DGP-Studio/Genshin.Skill](https://github.com/DGP-Studio/Genshin.Skill) 在提交 `1abc5c9f8daa5a98ecc7e02472cb82ea1047d10e` 下的 97 份角色 `SKILL.md` 完整归档到 `third_party/Genshin.Skill/skills/`。原文采用 MIT 许可，版权与许可说明见 `third_party/Genshin.Skill/LICENSE` 和 `NOTICE.md`。
+
+- 每份上游正文会完整保存为对应角色的 SoulMD，不只截取摘要。
+- 应用会据此生成适合微信短消息的私聊 Prompt，以及更精简、可控制群聊 Token 成本的群聊 Prompt。
+- 导入结果记录固定提交链接、原文件路径与 SHA-256 哈希，便于复核和后续更新。
+- 上游仓库没有覆盖的 30 名角色继续使用项目原有资料，不会被错误套用成其他角色。
+
+重新生成与校验：
+
+```bash
+npm run import:dgp-skills
+npm run audit:dgp-import
+```
 
 ## 本地开发
 
@@ -77,6 +94,13 @@ Web Service 与 PostgreSQL 必须部署在同一区域。Blueprint 当前将两�
 - 对话、消息、队列和每日用量均按账号隔离。
 
 ## 更新记录
+
+### 2.2.0 - 2026-08-27
+
+- 引入并归档 DGP-Studio/Genshin.Skill 的 97 份角色提示词，保留完整 MIT 许可、固定提交来源和原始 `SKILL.md`。
+- 为每名已覆盖角色生成私聊 Prompt、群聊 Prompt 与完整 SoulMD，明确用户就是旅行者，并保留人物经历、表达方式、最新动态、关系图谱、诚实边界和原作语气锚点。
+- 新增可重复运行的导入器、97 角色映射清单、文件 SHA-256 校验及自动化导入审计；上游未覆盖的 30 名角色会明确列出并保留原资料。
+- 群聊按成员数动态限制角色资料预算，在保留角色差异的同时避免大型群聊成倍消耗 Token。
 
 ### 2.1.1 - 2026-08-18
 

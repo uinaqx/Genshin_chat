@@ -1,0 +1,590 @@
+{
+  "project": "DGP-Studio/Genshin.Skill",
+  "repository": "https://github.com/DGP-Studio/Genshin.Skill",
+  "commit": "1abc5c9f8daa5a98ecc7e02472cb82ea1047d10e",
+  "license": "MIT",
+  "files": [
+    {
+      "characterId": "aino",
+      "characterName": "爱诺",
+      "sourcePath": "aino-perspective/SKILL.md",
+      "sha256": "a7189828ede3e6b0d172941c79254e80c297ea6f7c703dfa07ece3f17ca1dd76"
+    },
+    {
+      "characterId": "albedo",
+      "characterName": "阿贝多",
+      "sourcePath": "albedo-perspective/SKILL.md",
+      "sha256": "360b741dfe986bdd7285cdb41ed3386ae1f01465b90e711251f158ae610059b1"
+    },
+    {
+      "characterId": "alhaitham",
+      "characterName": "艾尔海森",
+      "sourcePath": "alhaitham-perspective/SKILL.md",
+      "sha256": "14f09ff6e7cb9456805ba4b57cd7bc283d7649625ce2a25391e58233fa111140"
+    },
+    {
+      "characterId": "amber",
+      "characterName": "安柏",
+      "sourcePath": "amber-perspective/SKILL.md",
+      "sha256": "c92341099bc0ecec08630a9ea2a4848c9971a6b5f481abfde98a8569b031f030"
+    },
+    {
+      "characterId": "arataki-itto",
+      "characterName": "荒泷一斗",
+      "sourcePath": "arataki-itto-perspective/SKILL.md",
+      "sha256": "8b972ccdc44ff92e930e262f40829f5c8d672aff0c3c3504b559fae3ac58f4d9"
+    },
+    {
+      "characterId": "arlecchino",
+      "characterName": "阿蕾奇诺",
+      "sourcePath": "arlecchino-perspective/SKILL.md",
+      "sha256": "05ad121cbbf80d4b16dd7ce7f4bc336b01e121c6de8431f5a86e8aaae03ed1a9"
+    },
+    {
+      "characterId": "ayaka",
+      "characterName": "神里绫华",
+      "sourcePath": "kamisato-ayaka-perspective/SKILL.md",
+      "sha256": "5c4eafc4cde3e43d3194cb6d6be5382fc043ab5a1bb9bf75cf6b90e2a40cf307"
+    },
+    {
+      "characterId": "ayato",
+      "characterName": "神里绫人",
+      "sourcePath": "kamisato-ayato-perspective/SKILL.md",
+      "sha256": "9eab9533803ce08a7802abc3ff389f87becd60b2ec45db494563da9539ea056a"
+    },
+    {
+      "characterId": "barbara",
+      "characterName": "芭芭拉",
+      "sourcePath": "barbara-perspective/SKILL.md",
+      "sha256": "555024ee1ca21efdfcaf68fc10950ea02383fa4fc68ecb30ac17dd81a02c2516"
+    },
+    {
+      "characterId": "beidou",
+      "characterName": "北斗",
+      "sourcePath": "beidou-perspective/SKILL.md",
+      "sha256": "0dae9e379e88dde04a8aed96a1afdf601a0687064672fc57710ed05c49525f50"
+    },
+    {
+      "characterId": "bennett",
+      "characterName": "班尼特",
+      "sourcePath": "bennett-perspective/SKILL.md",
+      "sha256": "269b51046b34e69bb5bc9fb9f919afb4c04cdad05f5fd40e9b50abd61ac2f837"
+    },
+    {
+      "characterId": "candace",
+      "characterName": "坎蒂丝",
+      "sourcePath": "candace-perspective/SKILL.md",
+      "sha256": "685704679a091247b492ed7c16ab761c838724b87bc689deb041218c4d7defa7"
+    },
+    {
+      "characterId": "charlotte",
+      "characterName": "夏洛蒂",
+      "sourcePath": "charlotte-perspective/SKILL.md",
+      "sha256": "a0614178eb438ddae1a6b8693775dc9b569990cd4db587c896276c19d8c452a3"
+    },
+    {
+      "characterId": "chasca",
+      "characterName": "恰斯卡",
+      "sourcePath": "chasca-perspective/SKILL.md",
+      "sha256": "ae98f5236329014279f9ebeeda96d3913130a5e3790b5b4e86fddafe02dd1d96"
+    },
+    {
+      "characterId": "chevreuse",
+      "characterName": "夏沃蕾",
+      "sourcePath": "chevreuse-perspective/SKILL.md",
+      "sha256": "e088adebc7029c5aaa8f7fa3fcaee7663504dc05c0497d01ad16cc184b49a1dc"
+    },
+    {
+      "characterId": "chiori",
+      "characterName": "千织",
+      "sourcePath": "chiori-perspective/SKILL.md",
+      "sha256": "e5a5fee6ba43e55377a8db8708dabea11f120bacbdb3d63bcd691103929317bd"
+    },
+    {
+      "characterId": "chongyun",
+      "characterName": "重云",
+      "sourcePath": "chongyun-perspective/SKILL.md",
+      "sha256": "ab1a9faf41c76393574d7dbd7312b3197963a0ab094384bbdb76a6418604ae67"
+    },
+    {
+      "characterId": "citlali",
+      "characterName": "茜特菈莉",
+      "sourcePath": "citlali-perspective/SKILL.md",
+      "sha256": "6b60c0b2ca9c651f30322c7c209fc25d6018de21c55826937bbfe0ff26ea28c1"
+    },
+    {
+      "characterId": "clorinde",
+      "characterName": "克洛琳德",
+      "sourcePath": "clorinde-perspective/SKILL.md",
+      "sha256": "7673cb657fe99fc7f30db005ec2d31b71abb1b26a775fd2c09d30d0204052a22"
+    },
+    {
+      "characterId": "collei",
+      "characterName": "柯莱",
+      "sourcePath": "collei-perspective/SKILL.md",
+      "sha256": "86f70ff09ae3f6fb890a20fa1dea7c42df8b8672a6df6a9cdbba0974ca0fb05d"
+    },
+    {
+      "characterId": "columbina",
+      "characterName": "哥伦比娅",
+      "sourcePath": "columbina-perspective/SKILL.md",
+      "sha256": "bffc2f71e174f91608226f2a7bfb45f6cb32b147b7d823660b4367f35164255a"
+    },
+    {
+      "characterId": "cyno",
+      "characterName": "赛诺",
+      "sourcePath": "cyno-perspective/SKILL.md",
+      "sha256": "ef1f60c44a7a36518c139bb793dabdbe90fa35ff46c788bf405bc56f23bf951a"
+    },
+    {
+      "characterId": "dehya",
+      "characterName": "迪希雅",
+      "sourcePath": "dehya-perspective/SKILL.md",
+      "sha256": "9411df69848247ad54a1564f29986006e4e1cafa0ae6b5d4b23da24ca6c1c643"
+    },
+    {
+      "characterId": "diluc",
+      "characterName": "迪卢克",
+      "sourcePath": "diluc-perspective/SKILL.md",
+      "sha256": "14ad2c8b2695f61baed2b7fc1df2db3a6695387547d17e0cdeafac281baa11c2"
+    },
+    {
+      "characterId": "diona",
+      "characterName": "迪奥娜",
+      "sourcePath": "diona-perspective/SKILL.md",
+      "sha256": "5ce61d05e13a31158ecf5bf57f1a7b400a8b465ddb424b840ea01d9e743d6cbe"
+    },
+    {
+      "characterId": "dori",
+      "characterName": "多莉",
+      "sourcePath": "dori-perspective/SKILL.md",
+      "sha256": "b72c9d97ba559ef362a5b70cb86471ede334a810bd548ce573513875f76a3aaf"
+    },
+    {
+      "characterId": "emilie",
+      "characterName": "艾梅莉埃",
+      "sourcePath": "emilie-perspective/SKILL.md",
+      "sha256": "99b94624c54a16ddf5397c9e742777d6b3a3ad4d0f18e28102ac6166f8a7ae67"
+    },
+    {
+      "characterId": "escoffier",
+      "characterName": "爱可菲",
+      "sourcePath": "escoffier-perspective/SKILL.md",
+      "sha256": "9b3507b6760c7b56554f504e98699ba00058ef35d03e45745d351f3017caba60"
+    },
+    {
+      "characterId": "faruzan",
+      "characterName": "珐露珊",
+      "sourcePath": "faruzan-perspective/SKILL.md",
+      "sha256": "d33649d5c0d01c2fc3e2d6d93097b8a8500a80c4c7fcfa8c9e7d88e5d2446f6b"
+    },
+    {
+      "characterId": "fischl",
+      "characterName": "菲谢尔",
+      "sourcePath": "fischl-perspective/SKILL.md",
+      "sha256": "9b26fd0a9a37cce55625a556c55997697273d96dc562caf76174d5ca70eb3761"
+    },
+    {
+      "characterId": "flins",
+      "characterName": "菲林斯",
+      "sourcePath": "flins-perspective/SKILL.md",
+      "sha256": "00b33beed890f7e5be8755ee6c938fc86074a53ffe88a8bbf9a922b77f9a52df"
+    },
+    {
+      "characterId": "freminet",
+      "characterName": "菲米尼",
+      "sourcePath": "freminet-perspective/SKILL.md",
+      "sha256": "8f42e84888312ae39b977cab6b6da4dc293dbc8df6c13fc747750a28c902feb2"
+    },
+    {
+      "characterId": "furina",
+      "characterName": "芙宁娜",
+      "sourcePath": "furina-perspective/SKILL.md",
+      "sha256": "8570a03e29800de1ffb76b0b9c71bba84aa433a7f5c60a0bdeaa8b4ee81290a5"
+    },
+    {
+      "characterId": "ganyu",
+      "characterName": "甘雨",
+      "sourcePath": "ganyu-perspective/SKILL.md",
+      "sha256": "00c6eb9fde79a3014ca452f5829e469ee8bfdb4be71417d77e39d587ec1998b9"
+    },
+    {
+      "characterId": "gorou",
+      "characterName": "五郎",
+      "sourcePath": "gorou-perspective/SKILL.md",
+      "sha256": "e4226ee5fe1402fdd3620d430ad209ef3aa3386bc29dfbb8db5dc72880d1bb3a"
+    },
+    {
+      "characterId": "hu-tao",
+      "characterName": "胡桃",
+      "sourcePath": "hu-tao-perspective/SKILL.md",
+      "sha256": "383b928a4430dcb41a98b379cfe6de567468d41ba8a340d3ba92b0f405624c32"
+    },
+    {
+      "characterId": "iansan",
+      "characterName": "伊安珊",
+      "sourcePath": "iansan-perspective/SKILL.md",
+      "sha256": "de091b163527b064e8f7b75c0bf4241cd132ceedf9d4c96758eb3f2366092c6b"
+    },
+    {
+      "characterId": "ifa",
+      "characterName": "伊法",
+      "sourcePath": "ifa-perspective/SKILL.md",
+      "sha256": "30d4d9a4679d6ea9a97891c3738eafabad959333e3eb66562b6d2d7fda2c5e57"
+    },
+    {
+      "characterId": "illuga",
+      "characterName": "叶洛亚",
+      "sourcePath": "illuga-perspective/SKILL.md",
+      "sha256": "1519c03da3112d5d5f5c73fe90e22af3688ba41ca66e2982d7edcedf23f1e74b"
+    },
+    {
+      "characterId": "ineffa",
+      "characterName": "伊涅芙",
+      "sourcePath": "ineffa-perspective/SKILL.md",
+      "sha256": "4715ea972fc4fe5f626987d54e714740bbcaa1853397884c033fc9de8d49c6d3"
+    },
+    {
+      "characterId": "jahoda",
+      "characterName": "雅珂达",
+      "sourcePath": "jahoda-perspective/SKILL.md",
+      "sha256": "c7dcbe25770f8c570baafcdf205e5cf11fcc481511d54f443d4305df6378d380"
+    },
+    {
+      "characterId": "jean",
+      "characterName": "琴",
+      "sourcePath": "jean-perspective/SKILL.md",
+      "sha256": "210de5d0db04c0c6757e18c01668084e6873c4566e60142a328a425df49d5364"
+    },
+    {
+      "characterId": "kachina",
+      "characterName": "卡齐娜",
+      "sourcePath": "kachina-perspective/SKILL.md",
+      "sha256": "fb2e14ea9e35821f05a2e628a416e85a57a1d8c1b3b4577908079dc1288a6eb7"
+    },
+    {
+      "characterId": "kaeya",
+      "characterName": "凯亚",
+      "sourcePath": "kaeya-perspective/SKILL.md",
+      "sha256": "eee04fa1cbb420be001281281cccb8038b2b0bd96639badc6f67d64e30d4d9dc"
+    },
+    {
+      "characterId": "kaveh",
+      "characterName": "卡维",
+      "sourcePath": "kaveh-perspective/SKILL.md",
+      "sha256": "c27c9720f3e52ed78d1798fc827304a6790bf507d3702fa1423318d50c65e791"
+    },
+    {
+      "characterId": "kazuha",
+      "characterName": "枫原万叶",
+      "sourcePath": "kaedehara-kazuha-perspective/SKILL.md",
+      "sha256": "e62d83b0330ed014d3c69b8da517562a78432a8338743565666c6dbe1350a1e3"
+    },
+    {
+      "characterId": "keqing",
+      "characterName": "刻晴",
+      "sourcePath": "keqing-perspective/SKILL.md",
+      "sha256": "d33ba2992b6c2b39260191c399d33b4671b185efffc32e3d2994bf228c0c4eaa"
+    },
+    {
+      "characterId": "kinich",
+      "characterName": "基尼奇",
+      "sourcePath": "kinich-perspective/SKILL.md",
+      "sha256": "ee8b7033d97b75c3750d86352694244a0cee0ebcd2db4daa900920b95e910ec8"
+    },
+    {
+      "characterId": "kirara",
+      "characterName": "绮良良",
+      "sourcePath": "kirara-perspective/SKILL.md",
+      "sha256": "a85638064fc69e42f5ea1a6fba1981b13993831a0e64a639e9e12400481735f0"
+    },
+    {
+      "characterId": "klee",
+      "characterName": "可莉",
+      "sourcePath": "klee-perspective/SKILL.md",
+      "sha256": "56e2270666ebd75cc9a23cf630a5daaa84ede9f8b938e5d0b808cdd69fef5019"
+    },
+    {
+      "characterId": "kokomi",
+      "characterName": "珊瑚宫心海",
+      "sourcePath": "kokomi-perspective/SKILL.md",
+      "sha256": "9f31e862fab7b6da7b36f8aac30eb6b6509e7f08f073cf3bdb436109ca7b2d96"
+    },
+    {
+      "characterId": "kuki-shinobu",
+      "characterName": "久岐忍",
+      "sourcePath": "kuki-shinobu-perspective/SKILL.md",
+      "sha256": "ab16132fc5dd0591c756355b31d4dbb32e3da76dbe99393930d497d9868b2b5a"
+    },
+    {
+      "characterId": "lauma",
+      "characterName": "菈乌玛",
+      "sourcePath": "lauma-perspective/SKILL.md",
+      "sha256": "c95f4106e814969d6f3e40e4c53725d49023846560af170b8d69079442d1696e"
+    },
+    {
+      "characterId": "layla",
+      "characterName": "莱依拉",
+      "sourcePath": "layla-perspective/SKILL.md",
+      "sha256": "93e22133ead02e8a5889f1244c08582453460454e917022a05fdaf6cf1c2fb29"
+    },
+    {
+      "characterId": "linnea",
+      "characterName": "莉奈娅",
+      "sourcePath": "linnea-perspective/SKILL.md",
+      "sha256": "4de913f5722b25264393f728813d107c26be6347894f677ae507cbbe8e7d24c9"
+    },
+    {
+      "characterId": "lisa",
+      "characterName": "丽莎",
+      "sourcePath": "lisa-perspective/SKILL.md",
+      "sha256": "b3f35079d6f707bdbc00463e7611fdacbba35c22ac98ac220b1594abc0b0006e"
+    },
+    {
+      "characterId": "lynette",
+      "characterName": "琳妮特",
+      "sourcePath": "lynette-perspective/SKILL.md",
+      "sha256": "0f8a60db012f823d6047fb8f5f0781a6fb6dd2004bca7ed4188d7b0ac9b1912a"
+    },
+    {
+      "characterId": "lyney",
+      "characterName": "林尼",
+      "sourcePath": "lyney-perspective/SKILL.md",
+      "sha256": "195a94c49b40947bcaa9b88d8e06e746c8211cbe5f36c59784f720d330a27a77"
+    },
+    {
+      "characterId": "mavuika",
+      "characterName": "玛薇卡",
+      "sourcePath": "mavuika-perspective/SKILL.md",
+      "sha256": "3dddbb3e867c6f7b07a6c5501a2ba17924e07dc5de5ce7e011ac14bf67286f75"
+    },
+    {
+      "characterId": "mualani",
+      "characterName": "玛拉妮",
+      "sourcePath": "mualani-perspective/SKILL.md",
+      "sha256": "77995ca408e9db88a1fe1b9cc2f6ce6e0d07b299b38c4eb183d8ac846f3f8ba7"
+    },
+    {
+      "characterId": "nahida",
+      "characterName": "纳西妲",
+      "sourcePath": "nahida-perspective/SKILL.md",
+      "sha256": "62f5941709ecfc5e2ca241020750f5003aa52b2e7ab542621122e7fb96d9cce7"
+    },
+    {
+      "characterId": "navia",
+      "characterName": "娜维娅",
+      "sourcePath": "navia-perspective/SKILL.md",
+      "sha256": "825b0519075b07ee02b422cb4ca3aec6753f404127318e99af553949d9ef1502"
+    },
+    {
+      "characterId": "nefer",
+      "characterName": "奈芙尔",
+      "sourcePath": "nefer-perspective/SKILL.md",
+      "sha256": "2118cc40ac0722ca51f454640bfa743e120d3672776ea704551a5184584c4a3a"
+    },
+    {
+      "characterId": "neuvillette",
+      "characterName": "那维莱特",
+      "sourcePath": "neuvillette-perspective/SKILL.md",
+      "sha256": "f764dd19bebfbd78eceac64f7e14596446d117f05239f7d59c9b37a3c3aa1e8d"
+    },
+    {
+      "characterId": "nicole",
+      "characterName": "尼可",
+      "sourcePath": "nicole-perspective/SKILL.md",
+      "sha256": "2ac1814b68bdb60ce72f9f34ba166fe0b0f03bbb39c8ca203f24c90b5b8f99c5"
+    },
+    {
+      "characterId": "nilou",
+      "characterName": "妮露",
+      "sourcePath": "nilou-perspective/SKILL.md",
+      "sha256": "18632c1da2a640c140278e4e0a985f4e417e482770b727e4c4b11abea8366d8e"
+    },
+    {
+      "characterId": "ningguang",
+      "characterName": "凝光",
+      "sourcePath": "ningguang-perspective/SKILL.md",
+      "sha256": "c77e8e63fcb80e88e5e3df0d09994b91e69ae667688c8131e47048c0d2b7ac10"
+    },
+    {
+      "characterId": "noelle",
+      "characterName": "诺艾尔",
+      "sourcePath": "noelle-perspective/SKILL.md",
+      "sha256": "9724d1cd7bec1e6531dc71eb1574f73209ef492d6fa1f0a203d8e69750cbe4e1"
+    },
+    {
+      "characterId": "ororon",
+      "characterName": "欧洛伦",
+      "sourcePath": "ororon-perspective/SKILL.md",
+      "sha256": "b61c0d4d092a0415546970c70c9e51d3358e4e18a4824008234f7476a1c59492"
+    },
+    {
+      "characterId": "qiqi",
+      "characterName": "七七",
+      "sourcePath": "qiqi-perspective/SKILL.md",
+      "sha256": "dad01b4b347f9209a52b35c46e86bf8a08aaeb5c973059a8baecd64115a5f72e"
+    },
+    {
+      "characterId": "raiden",
+      "characterName": "雷电将军",
+      "sourcePath": "raiden-shogun-perspective/SKILL.md",
+      "sha256": "292e1d1be831cb60ade084fded822294ff3044604b7be478a59f06ea0166af25"
+    },
+    {
+      "characterId": "razor",
+      "characterName": "雷泽",
+      "sourcePath": "razor-perspective/SKILL.md",
+      "sha256": "f6b67953a74944b570182f379f5693bc2e6d299ea01beaf8241ac3b8ec9d983f"
+    },
+    {
+      "characterId": "sandrone",
+      "characterName": "桑多涅",
+      "sourcePath": "sandrone-perspective/SKILL.md",
+      "sha256": "e1e04d9df61783fdc1e13de65ffb27898c4512fc279f4174bee11275ee673cee"
+    },
+    {
+      "characterId": "sara",
+      "characterName": "九条裟罗",
+      "sourcePath": "kujou-sara-perspective/SKILL.md",
+      "sha256": "82141212165063e6b308fb17f2966a018cf00d5266ee0aa61caaf293623d42ea"
+    },
+    {
+      "characterId": "sayu",
+      "characterName": "早柚",
+      "sourcePath": "sayu-perspective/SKILL.md",
+      "sha256": "a71da770cf1f34db45a47fa742ad74cc05d02a9b197b6e086a4b43141bdc2338"
+    },
+    {
+      "characterId": "sethos",
+      "characterName": "赛索斯",
+      "sourcePath": "sethos-perspective/SKILL.md",
+      "sha256": "bc482d903f476fd343e869cbf37e7233206682a1a423769c1f01c08010e77187"
+    },
+    {
+      "characterId": "shikanoin-heizou",
+      "characterName": "鹿野院平藏",
+      "sourcePath": "shikanoin-heizou-perspective/SKILL.md",
+      "sha256": "cc82af32983a9a4ddf2973cdb73b9106862dedc7536170bf0163c8f99c57d08e"
+    },
+    {
+      "characterId": "sigewinne",
+      "characterName": "希格雯",
+      "sourcePath": "sigewinne-perspective/SKILL.md",
+      "sha256": "1dcc9c707fcc890c368b6e19d7811f400f651a02905c60d8c1b966518ca5958d"
+    },
+    {
+      "characterId": "skirk",
+      "characterName": "丝柯克",
+      "sourcePath": "skirk-perspective/SKILL.md",
+      "sha256": "1e49c7bea3b85ee4c5aea79adc95a87c96a3e5b1706704620981e83ed509ff8b"
+    },
+    {
+      "characterId": "tartaglia",
+      "characterName": "达达利亚",
+      "sourcePath": "tartaglia-perspective/SKILL.md",
+      "sha256": "7f4bc3d413d1e56481bf3e47b4fa11fcbc9b4924a38e25aa33f9cfaf8dbd1449"
+    },
+    {
+      "characterId": "thoma",
+      "characterName": "托马",
+      "sourcePath": "thoma-perspective/SKILL.md",
+      "sha256": "a69d9c128d9795beb695aae71a390f15a3fdad4ebbb6798b6ed8e483b44731c7"
+    },
+    {
+      "characterId": "tighnari",
+      "characterName": "提纳里",
+      "sourcePath": "tighnari-perspective/SKILL.md",
+      "sha256": "a99d0d6dd4c8c90e85747a666b138efb218d6acf6596427cb116efcbf4105855"
+    },
+    {
+      "characterId": "varesa",
+      "characterName": "瓦雷莎",
+      "sourcePath": "varesa-perspective/SKILL.md",
+      "sha256": "ac4c247b9601eba3199e87a33de923698cf1e51132a72a07ecab282dbdde21ae"
+    },
+    {
+      "characterId": "venti",
+      "characterName": "温迪",
+      "sourcePath": "venti-perspective/SKILL.md",
+      "sha256": "ace6b0a82e9d8ffa729f8ba096708898f6701b7da03c4c6a804c639ea4445308"
+    },
+    {
+      "characterId": "wanderer",
+      "characterName": "流浪者",
+      "sourcePath": "wanderer-perspective/SKILL.md",
+      "sha256": "063d10f162ea1da1956c73596ffdf403f1f641ae64d6d1d37eeb904dd7eb0a39"
+    },
+    {
+      "characterId": "wriothesley",
+      "characterName": "莱欧斯利",
+      "sourcePath": "wriothesley-perspective/SKILL.md",
+      "sha256": "7838be21d34eedff42f41e22d05a318b667d5806221ea6cc5101306f08fa4c10"
+    },
+    {
+      "characterId": "xiangling",
+      "characterName": "香菱",
+      "sourcePath": "xiangling-perspective/SKILL.md",
+      "sha256": "f9be99b6f35c9528af37b732728df465726677ad6a262bb5800586bcc7916876"
+    },
+    {
+      "characterId": "xiao",
+      "characterName": "魈",
+      "sourcePath": "xiao-perspective/SKILL.md",
+      "sha256": "8ed8d2c126ae6f9cf440285a598ae18fb12d6e60a1931afe76ccb8d3e3959431"
+    },
+    {
+      "characterId": "xilonen",
+      "characterName": "希诺宁",
+      "sourcePath": "xilonen-perspective/SKILL.md",
+      "sha256": "51a8ac8cc9d58acd94ec825a7f37cff823ec23b54b0cdc4e187516a56a4d87ba"
+    },
+    {
+      "characterId": "xingqiu",
+      "characterName": "行秋",
+      "sourcePath": "xingqiu-perspective/SKILL.md",
+      "sha256": "e23cdf41a885112e58b397c285891d62d7aed0171a8ff16dbe69e9d686c91ba7"
+    },
+    {
+      "characterId": "xinyan",
+      "characterName": "辛焱",
+      "sourcePath": "xinyan-perspective/SKILL.md",
+      "sha256": "5ad3fc9fb01aa676c5220ed89319411db45e45cd665f67b937c5d811fc11ab8b"
+    },
+    {
+      "characterId": "yae-miko",
+      "characterName": "八重神子",
+      "sourcePath": "yae-miko-perspective/SKILL.md",
+      "sha256": "bb3263b33a6100de4b61d48abf88f6851bb42379a51a2e088de7bf1886c631f4"
+    },
+    {
+      "characterId": "yanfei",
+      "characterName": "烟绯",
+      "sourcePath": "yanfei-perspective/SKILL.md",
+      "sha256": "65a211c65a6d1d79fb0b9af72707457865326a0d1af03609dc679428aedd40d6"
+    },
+    {
+      "characterId": "yelan",
+      "characterName": "夜兰",
+      "sourcePath": "yelan-perspective/SKILL.md",
+      "sha256": "b75ebef8c173718e05c66f941ac3421da53db85a25497ae96a03464a6299f11d"
+    },
+    {
+      "characterId": "yoimiya",
+      "characterName": "宵宫",
+      "sourcePath": "yoimiya-perspective/SKILL.md",
+      "sha256": "ac178cf806addfc82d7a3b60436f4eea569a62cf00ce4f1dd9ed41d8981e559d"
+    },
+    {
+      "characterId": "yumemizuki-mizuki",
+      "characterName": "梦见月瑞希",
+      "sourcePath": "yumemizuki-mizuki-perspective/SKILL.md",
+      "sha256": "0f5240eea3a072dbef35f9b4ebed6bfb05a4c79c535e98b574f7b5d45af5fcec"
+    },
+    {
+      "characterId": "zhongli",
+      "characterName": "钟离",
+      "sourcePath": "zhongli-perspective/SKILL.md",
+      "sha256": "c19a28771fb76da7671e6f06d188562d140fb631459aa01c6081059f370b0510"
+    }
+  ]
+}

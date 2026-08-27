@@ -12,6 +12,7 @@ export type CharacterRecord = {
   description?: string;
   avatarUrl?: string;
   prompt?: string;
+  groupPrompt?: string;
   soulMd?: string;
 };
 
