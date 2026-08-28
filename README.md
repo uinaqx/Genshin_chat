@@ -2,14 +2,14 @@
 
 > **网页版：[立即打开提瓦特微信](https://teyvat-wechat.onrender.com)**
 
-一个面向浏览器的《原神》角色聊天应用。注册后可以与 127 名非旅行者角色私聊，也可以自由组合角色创建群聊。每个账号拥有独立的聊天记录，模型密钥仅保存在服务端环境变量中。
+一个面向浏览器的《原神》角色聊天应用。注册后可以与 127 名非旅行者角色私聊，也可以自由组合角色创建群聊。全部可聊角色都具备独立私聊 Prompt、群聊 Prompt 与完整 SoulMD；每个账号拥有独立聊天记录，模型密钥仅保存在服务端环境变量中。
 
 ## 功能
 
 - 仅使用邮箱和密码注册登录，密码使用 bcrypt 哈希保存
 - HttpOnly 会话 Cookie 与账号级数据隔离
 - 127 名角色通讯录，已同步至至冬 7.0《骤雪》公开角色
-- 97 名角色使用 DGP-Studio/Genshin.Skill 的完整角色思维设定，并分别适配私聊与群聊
+- 127 名角色全部使用独立完整人设：97 份来自 DGP-Studio/Genshin.Skill，另 30 份由项目依据当前剧情资料补充
 - 私聊和自定义群聊
 - 微信式短消息；多句模型回复会在本地拆成连续独立气泡并持久化
 - 回复期间仍可连续发送，新消息会合并为下一批请求
@@ -29,19 +29,29 @@
 
 ## 角色提示词来源
 
-项目已将 [DGP-Studio/Genshin.Skill](https://github.com/DGP-Studio/Genshin.Skill) 在提交 `1abc5c9f8daa5a98ecc7e02472cb82ea1047d10e` 下的 97 份角色 `SKILL.md` 完整归档到 `third_party/Genshin.Skill/skills/`。原文采用 MIT 许可，版权与许可说明见 `third_party/Genshin.Skill/LICENSE` 和 `NOTICE.md`。
+项目已将 [DGP-Studio/Genshin.Skill](https://github.com/DGP-Studio/Genshin.Skill) 在提交 `1abc5c9f8daa5a98ecc7e02472cb82ea1047d10e` 下的 97 份角色 `SKILL.md` 完整归档到 `third_party/Genshin.Skill/skills/`。原文采用 MIT 许可，版权与许可说明见 `third_party/Genshin.Skill/LICENSE` 和 `third_party/Genshin.Skill/NOTICE.md`。
 
 - 每份上游正文会完整保存为对应角色的 SoulMD，不只截取摘要。
 - 应用会据此生成微信短消息适配规则；每次角色回复请求都会完整携带对应 Prompt 与 SoulMD，不进行字符截断。
 - 导入结果记录固定提交链接、原文件路径与 SHA-256 哈希，便于复核和后续更新。
-- 上游仓库没有覆盖的 30 名角色继续使用项目原有资料，不会被错误套用成其他角色。
+- 上游仓库未覆盖的 30 名角色已在 `third_party/curated-prompts/profiles/` 建立独立深度档案，包括埃洛伊、白术、嘉明、罗莎莉亚、莫娜、申鹤、闲云、法尔伽、阿罗夏、奥黛塔、沃雅妮莎、安娜丝塔夏等角色。
+- 这 30 份资料依据 2026-08-27 抓取的《原神》BWIKI 角色页、语音页与剧情任务页整理；来源 URL、页面 SHA-256、档案 SHA-256 和逐字台词验证分别记录在 `SOURCES.json`、`MANIFEST.json` 与 `VERIFICATION.json`。相关资料许可说明见 `third_party/curated-prompts/NOTICE.md`。
+- 30 份补充档案合计约 10.6 万字符私聊 Prompt、6.8 万字符群聊 Prompt 和 15.8 万字符 SoulMD；没有可靠语音的角色会明确留空，不伪造所谓“原作台词”。
+- 私聊每次完整发送当前角色的 Prompt 与 SoulMD；群聊只为导演选中的成员生成回复，但导演上下文会完整包含所有群成员的群聊 Prompt、私聊 Prompt 与 SoulMD，不做静默截断。
 
 重新生成与校验：
 
 ```bash
 npm run import:dgp-skills
 npm run audit:dgp-import
+npm run fetch:curated-sources
+npm run generate:curated-prompts
+npm run normalize:curated-prompts
+npm run import:curated-prompts
+npm run audit:curated-prompts
 ```
+
+`review:curated-prompts` 会调用模型做第二视角的事实审查，需要配置可用的服务端模型密钥。确定性审计不依赖模型判断，并逐角色检查来源、哈希、长度、章节、旅行者身份、原作短句、已知事实回归和数据库同步。
 
 ## 本地开发
 
@@ -94,6 +104,16 @@ Web Service 与 PostgreSQL 必须部署在同一区域。Blueprint 当前将两�
 - 对话、消息、队列和每日用量均按账号隔离。
 
 ## 更新记录
+
+### 3.0.0 - 2026-08-28
+
+- 完成此前缺失的 30 名角色深度档案，为每名角色分别建立完整私聊 Prompt、群聊 Prompt 与 SoulMD；至此 127 名可聊角色全部拥有独立完整上下文。
+- 补充角色不再沿用旧版简短描述：档案覆盖身份、人格内核、经历与当前时间线、旅行者关系、确认关系网、日常生活、能力边界、语言 DNA、至少 12 个微信场景示例和未知事实边界。
+- 接入当前至冬 7.0 剧情资料，修正“阿罗夏”“薇斯纳”等正式中文名，并补齐法尔伽、洛恩、布伦妮、沃雅妮莎、奥黛塔、米提亚、安娜丝塔夏等新剧情角色。
+- 建立可重复运行的资料抓取、生成、归一化、导入、确定性审计与独立模型复核流水线；30 份档案均保存来源 URL、页面与档案 SHA-256，原作语气锚点均可逐字回查资料快照。
+- 修复少数生成阶段的过度推断，包括砂糖不存在的尾巴、塔利雅“水压剑”被误写为武器名、优菈师承因果混写，以及至冬剧院事件中人物状态与关系表述不精确等问题。
+- 将完整上下文回归测试从 97 名角色扩展到全部 127 名角色，同时验证私聊 Prompt、群聊 Prompt、SoulMD 尾部均未截断，且后台完整人设不会通过通讯录 API 暴露给玩家。
+- `/api/health` 增加版本号，便于确认 GitHub 推送后的 Render 实例是否已部署到 `3.0.0`。
 
 ### 2.2.1 - 2026-08-27
 

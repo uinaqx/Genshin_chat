@@ -93,8 +93,19 @@ test("splits multi-sentence model output into durable chat bubbles", async () =>
   assert.match(chatRoute, /savedReplies = bubbleReplies\.map/);
 });
 
-test("publishes the 2.2.1 full character context release", async () => {
-  const [manifestText, readme, client, styles, characterText, importText] = await Promise.all([
+test("publishes the 3.0.0 complete character profile release", async () => {
+  const [
+    manifestText,
+    readme,
+    client,
+    styles,
+    characterText,
+    importText,
+    curatedManifestText,
+    curatedSourcesText,
+    curatedVerificationText,
+    healthRoute,
+  ] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../app/chat/chat-app.tsx", import.meta.url), "utf8"),
@@ -104,16 +115,37 @@ test("publishes the 2.2.1 full character context release", async () => {
       new URL("../third_party/Genshin.Skill/MANIFEST.json", import.meta.url),
       "utf8",
     ),
+    readFile(
+      new URL("../third_party/curated-prompts/MANIFEST.json", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../third_party/curated-prompts/SOURCES.json", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../third_party/curated-prompts/VERIFICATION.json", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../app/api/health/route.ts", import.meta.url), "utf8"),
   ]);
   const characterData = JSON.parse(characterText);
   const importManifest = JSON.parse(importText);
-  assert.equal(JSON.parse(manifestText).version, "2.2.1");
+  const curatedManifest = JSON.parse(curatedManifestText);
+  const curatedSources = JSON.parse(curatedSourcesText);
+  const curatedVerification = JSON.parse(curatedVerificationText);
+  assert.equal(JSON.parse(manifestText).version, "3.0.0");
   assert.match(readme.slice(0, 300), /https:\/\/teyvat-wechat\.onrender\.com/);
-  assert.match(readme, /### 2\.2\.1 - 2026-08-27/);
-  assert.match(client, /提瓦特微信 Web · 2\.2\.1/);
+  assert.match(readme, /### 3\.0\.0 - 2026-08-28/);
+  assert.match(client, /提瓦特微信 Web · 3\.0\.0/);
+  assert.match(healthRoute, /version:\s*"3\.0\.0"/);
   assert.equal(importManifest.files.length, 97);
+  assert.equal(curatedManifest.profiles.length, 30);
+  assert.equal(curatedSources.characters.length, 30);
+  assert.equal(curatedVerification.characters.length, 30);
   assert.equal(characterData.promptImport.importedCharacters, 97);
   assert.equal(characterData.promptImport.uncoveredCharacters.length, 30);
+  assert.equal(characterData.curatedPromptImport.importedCharacters, 30);
   assert.equal(
     characterData.characters.filter(
       (character) =>
@@ -130,7 +162,7 @@ test("publishes the 2.2.1 full character context release", async () => {
   assert.match(styles, /\.tab-bar button\s*\{[\s\S]*?min-height:\s*0/);
 });
 
-test("sends every imported character prompt to the model without truncation", async () => {
+test("sends all 127 character profiles to private and group models without truncation", async () => {
   const [contextBuilder, characterText, chatRoute] = await Promise.all([
     import(new URL("../app/lib/character-context.ts", import.meta.url)),
     readFile(new URL("../data/characters.json", import.meta.url), "utf8"),
@@ -138,11 +170,10 @@ test("sends every imported character prompt to the model without truncation", as
   ]);
   const characterData = JSON.parse(characterText);
   const importedCharacters = characterData.characters.filter(
-    (character) =>
-      character.promptProvenance?.project === "DGP-Studio/Genshin.Skill",
+    (character) => !character.id.startsWith("traveler-"),
   );
 
-  assert.equal(importedCharacters.length, 97);
+  assert.equal(importedCharacters.length, 127);
   for (const character of importedCharacters) {
     const singleContext = contextBuilder.buildSingleCharacterSystemPrompt(character);
     const groupContext = contextBuilder.buildGroupCharacterSystemPrompt(
@@ -162,6 +193,12 @@ test("sends every imported character prompt to the model without truncation", as
         context.includes(character.soulMd),
         `${character.name} 的${mode}请求缺少完整 SoulMD`,
       );
+      if (mode === "群聊") {
+        assert.ok(
+          context.includes(character.groupPrompt),
+          `${character.name} 的群聊请求缺少完整群聊 Prompt`,
+        );
+      }
       assert.ok(
         context.includes(character.prompt.slice(-256)),
         `${character.name} 的${mode} Prompt 末尾被截断`,
@@ -179,4 +216,16 @@ test("sends every imported character prompt to the model without truncation", as
     /buildGroupCharacterSystemPrompt\(members, transcript\)/,
   );
   assert.doesNotMatch(chatRoute, /slice\(0,\s*(?:7000|4500|perMemberPromptLimit)/);
+});
+
+test("keeps private character prompts out of the public character API", async () => {
+  const [charactersModule, charactersRoute] = await Promise.all([
+    readFile(new URL("../app/lib/characters.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/characters/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(charactersRoute, /publicCharacters\(\)/);
+  const publicMapper = charactersModule.split("export function publicCharacters")[1];
+  assert.doesNotMatch(publicMapper, /prompt:\s*character\.prompt/);
+  assert.doesNotMatch(publicMapper, /groupPrompt:\s*character\.groupPrompt/);
+  assert.doesNotMatch(publicMapper, /soulMd:\s*character\.soulMd/);
 });

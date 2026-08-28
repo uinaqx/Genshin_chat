@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "project": "Teyvat WeChat curated character profiles",
+  "version": 1,
+  "generatedAt": "2026-08-28",
+  "generatedWith": "deepseek-v4-flash",
+  "sourceManifest": "SOURCES.json",
+  "sourceRetrievedAt": "2026-08-27",
+  "sourceLicense": "CC BY-NC-SA 4.0",
+  "profiles": [
+    {
+      "id": "aloy",
+      "name": "埃洛伊",
+      "file": "profiles/aloy.json",
+      "sha256": "c82d2a0c882b91746ab784c0eb78f6e24c536fa1261d741ed5f4919d1857df6b",
+      "promptLength": 3126,
+      "groupPromptLength": 1972,
+      "soulMdLength": 4816
+    },
+    {
+      "id": "baizhu",
+      "name": "白术",
+      "file": "profiles/baizhu.json",
+      "sha256": "e7a0e85a8b3d54ee767ce79a4d977dbe72d0694f766873cbdfa097f684756816",
+      "promptLength": 4186,
+      "groupPromptLength": 2804,
+      "soulMdLength": 5923
+    },
+    {
+      "id": "gaming",
+      "name": "嘉明",
+      "file": "profiles/gaming.json",
+      "sha256": "439f4ef881093bd5b6b599a03ed153329a797b1b0aadda9ea76f5e6c03485033",
+      "promptLength": 3220,
+      "groupPromptLength": 2017,
+      "soulMdLength": 4882
+    },
+    {
+      "id": "rosaria",
+      "name": "罗莎莉亚",
+      "file": "profiles/rosaria.json",
+      "sha256": "fd479741017301fd65a310840d687f2dcbd2dbee3552425eb44aa7a9ee5f13a3",
+      "promptLength": 3602,
+      "groupPromptLength": 2485,
+      "soulMdLength": 5267
+    },
+    {
+      "id": "mika",
+      "name": "米卡",
+      "file": "profiles/mika.json",
+      "sha256": "276eb62a2285a653e48b1ab9208631f9ff464fcf2273a9ecd9ff74c0cbc5abf4",
+      "promptLength": 4001,
+      "groupPromptLength": 2532,
+      "soulMdLength": 5671
+    },
+    {
+      "id": "mona",
+      "name": "莫娜",
+      "file": "profiles/mona.json",
+      "sha256": "cf4e7dbed6c14e8ab02734027fe38bbb9703a451924cf8ff45035a15b59913e8",
+      "promptLength": 3556,
+      "groupPromptLength": 2284,
+      "soulMdLength": 5196
+    },
+    {
+      "id": "sucrose",
+      "name": "砂糖",
+      "file": "profiles/sucrose.json",
+      "sha256": "f690045fd47a96754046e23459e970e4193a1253c26f0101a7f2c44ac632d115",
+      "promptLength": 3010,
+      "groupPromptLength": 1814,
+      "soulMdLength": 4625
+    },
+    {
+      "id": "shenhe",
+      "name": "申鹤",
+      "file": "profiles/shenhe.json",
+      "sha256": "dd07e97d5950ceb621b89722d612f4e7621efccad9fc52057338f6a37fd1ff3f",
+      "promptLength": 4070,
+      "groupPromptLength": 2814,
+      "soulMdLength": 5734
+    },
+    {
+      "id": "xianyun",
+      "name": "闲云",
+      "file": "profiles/xianyun.json",
+      "sha256": "acd5d109d853fa245159df3a570ff62cfa961957abbd90538a68366515c0acc6",
+      "promptLength": 3929,
+      "groupPromptLength": 2605,
+      "soulMdLength": 5607
+    },
+    {
+      "id": "yaoyao",
+      "name": "瑶瑶",
+      "file": "profiles/yaoyao.json",
+      "sha256": "d54b9e69987deeef0aa02c9c2ad0051f4e7a635a631285a3b3287bbc9ba2b51c",
+      "promptLength": 3663,
+      "groupPromptLength": 2195,
+      "soulMdLength": 5274
+    },
+    {
+      "id": "eula",
+      "name": "优菈",
+      "file": "profiles/eula.json",
+      "sha256": "154b770348fe40639969536dce34d855fee860e59b59691b07ac5a9ae4dd0e57",
+      "promptLength": 3488,
+      "groupPromptLength": 2326,
+      "soulMdLength": 5128
+    },
+    {
+      "id": "yun-jin",
+      "name": "云堇",
+      "file": "profiles/yun-jin.json",
+      "sha256": "ff91dd069fb387f4d1be83a17256f218f17098796828f047a50ac58f250cf7ea",
+      "promptLength": 3221,
+      "groupPromptLength": 2069,
+      "soulMdLength": 4814
+    },
+    {
+      "id": "lan-yan",
+      "name": "蓝砚",
+      "file": "profiles/lan-yan.json",
+      "sha256": "abb38f161475cd1685a9828b7f6c1f3e3f035cb174a47def1ce7478d520997af",
+      "promptLength": 3828,
+      "groupPromptLength": 2464,
+      "soulMdLength": 5486
+    },
+    {
+      "id": "dahlia",
+      "name": "塔利雅",
+      "file": "profiles/dahlia.json",
+      "sha256": "f0fca1380f39423b1773ea2980c4fa53e0424534b7822fc048bbdb4d645c0fdf",
+      "promptLength": 3748,
+      "groupPromptLength": 2350,
+      "soulMdLength": 5483
+    },
+    {
+      "id": "durin",
+      "name": "杜林",
+      "file": "profiles/durin.json",
+      "sha256": "9c71d6b4e3525f43f6c9750ff8fb742f29d5d97ec355c96f3561270444050d82",
+      "promptLength": 3742,
+      "groupPromptLength": 2418,
+      "soulMdLength": 5383
+    },
+    {
+      "id": "zibai",
+      "name": "兹白",
+      "file": "profiles/zibai.json",
+      "sha256": "a940244486803c7b03c648f9dfd25efef2fcc8c451c5ad0ffc4eb8653b33db12",
+      "promptLength": 3518,
+      "groupPromptLength": 2321,
+      "soulMdLength": 5215
+    },
+    {
+      "id": "varka",
+      "name": "法尔伽",
+      "file": "profiles/varka.json",
+      "sha256": "0f3e421fc788edefffa810e901ace9d99b88d42abd4318facd75dc4471891d9b",
+      "promptLength": 3706,
+      "groupPromptLength": 2239,
+      "soulMdLength": 5346
+    },
+    {
+      "id": "lohen",
+      "name": "洛恩",
+      "file": "profiles/lohen.json",
+      "sha256": "b4f3cd9226f067a7a9d7ac6fd508e543cbb26c8d0e6881201e783f137127265d",
+      "promptLength": 3634,
+      "groupPromptLength": 2288,
+      "soulMdLength": 5308
+    },
+    {
+      "id": "prune",
+      "name": "布伦妮",
+      "file": "profiles/prune.json",
+      "sha256": "98c09abd4347aaba03cec0f0bcdfc23f009dc37ad6b9cfc5d8681f4bb32dad2e",
+      "promptLength": 3574,
+      "groupPromptLength": 2324,
+      "soulMdLength": 5212
+    },
+    {
+      "id": "vodyanitsa",
+      "name": "沃雅妮莎",
+      "file": "profiles/vodyanitsa.json",
+      "sha256": "8e6cf9af7f54c3a2322c50ec438b396ac0c0eadfca803602178ba61c0a0f8848",
+      "promptLength": 3629,
+      "groupPromptLength": 2327,
+      "soulMdLength": 5592
+    },
+    {
+      "id": "alyosha",
+      "name": "阿罗夏",
+      "file": "profiles/alyosha.json",
+      "sha256": "fdcf016cfb2a5ef0f4793c7a63652e92a86d59a218d25f1beb16b7dff214c92d",
+      "promptLength": 3780,
+      "groupPromptLength": 2429,
+      "soulMdLength": 5617
+    },
+    {
+      "id": "odette",
+      "name": "奥黛塔",
+      "file": "profiles/odette.json",
+      "sha256": "a123f4bc3635e698eb83fa546302ff975d38524db38ef3e77018dfe1e149fccd",
+      "promptLength": 3888,
+      "groupPromptLength": 2669,
+      "soulMdLength": 5749
+    },
+    {
+      "id": "valeriy",
+      "name": "瓦列里",
+      "file": "profiles/valeriy.json",
+      "sha256": "cd4143672dde80bb3f4c2bdb9e3d8dc0f1580f320e5b8d10af8c412f7c879357",
+      "promptLength": 3196,
+      "groupPromptLength": 1970,
+      "soulMdLength": 5134
+    },
+    {
+      "id": "pulcinella",
+      "name": "普契涅拉",
+      "file": "profiles/pulcinella.json",
+      "sha256": "a883a2fa35cfb1712f4f75f09ff4ebe7815a5b883f878cfe92a7afa10a441e02",
+      "promptLength": 3861,
+      "groupPromptLength": 2460,
+      "soulMdLength": 5685
+    },
+    {
+      "id": "pantalone",
+      "name": "潘塔罗涅",
+      "file": "profiles/pantalone.json",
+      "sha256": "7e380f0f9b405a23c9a7f5e4f551c01ecff5829bc48b0fc630c05087194787d9",
+      "promptLength": 3804,
+      "groupPromptLength": 2400,
+      "soulMdLength": 5609
+    },
+    {
+      "id": "vesna",
+      "name": "薇斯纳",
+      "file": "profiles/vesna.json",
+      "sha256": "53b60835bd563782004e0bae1e89813678bdff1a759dd14f6b79ccd6e91b3f52",
+      "promptLength": 3001,
+      "groupPromptLength": 2025,
+      "soulMdLength": 4766
+    },
+    {
+      "id": "danica",
+      "name": "达妮卡",
+      "file": "profiles/danica.json",
+      "sha256": "74fb1ad52c87f291db22019e1e255b361cb688570b330d6d972813921dc61c63",
+      "promptLength": 2818,
+      "groupPromptLength": 1776,
+      "soulMdLength": 4515
+    },
+    {
+      "id": "noy",
+      "name": "诺伊",
+      "file": "profiles/noy.json",
+      "sha256": "a76f5d1ebc3914933d48f3f7280c69760c405eae95a64d0c0f159caaee70bf5a",
+      "promptLength": 2581,
+      "groupPromptLength": 1713,
+      "soulMdLength": 4265
+    },
+    {
+      "id": "mitya",
+      "name": "米提亚",
+      "file": "profiles/mitya.json",
+      "sha256": "b471b4a8cd61ef2bb79ac683b77775a0fbeb88898584dad1f0057809c45d2d95",
+      "promptLength": 4065,
+      "groupPromptLength": 2439,
+      "soulMdLength": 6093
+    },
+    {
+      "id": "tsaritsa",
+      "name": "安娜丝塔夏",
+      "file": "profiles/tsaritsa.json",
+      "sha256": "93661ffcc172dc2467f5245a7ec26d9315dc47ded14e34c630c2e14d7c0d6365",
+      "promptLength": 3225,
+      "groupPromptLength": 2171,
+      "soulMdLength": 5112
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "teyvat-wechat-web",
-  "version": "2.2.1",
+  "version": "3.0.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -12,7 +12,13 @@
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint app tests tools --ignore-pattern .next",
     "audit:dgp-import": "node tools/audit-dgp-import.mjs",
-    "import:dgp-skills": "node tools/import-dgp-skills.mjs"
+    "import:dgp-skills": "node tools/import-dgp-skills.mjs",
+    "fetch:curated-sources": "node tools/fetch-curated-sources.mjs",
+    "generate:curated-prompts": "node tools/generate-curated-prompts.mjs",
+    "normalize:curated-prompts": "node tools/normalize-curated-profiles.mjs",
+    "import:curated-prompts": "node tools/import-curated-prompts.mjs",
+    "audit:curated-prompts": "node tools/audit-curated-prompts.mjs",
+    "review:curated-prompts": "node tools/review-curated-prompts.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
