@@ -42,6 +42,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public class LiveChatWorker extends Worker {
+    private static final int RECENT_CONTEXT_MESSAGE_LIMIT = 100;
     private static final String PERIODIC_WORK = "teyvat_follow_up_periodic";
     private static final String ONCE_WORK = "teyvat_follow_up_once";
 
@@ -394,7 +395,7 @@ public class LiveChatWorker extends Worker {
         if (memories != null) {
             source += memories.toString();
         }
-        source += "\n" + recentText(conversation, 16);
+        source += "\n" + recentText(conversation, RECENT_CONTEXT_MESSAGE_LIMIT);
         String[] keys = {"明天", "后天", "一小时", "半小时", "等会", "到时候", "项目", "作业", "考试", "提交", "交上去", "睡觉", "跑步"};
         for (String key : keys) {
             int index = source.indexOf(key);
@@ -446,35 +447,6 @@ public class LiveChatWorker extends Worker {
                 + "结合身份“" + speaker.title + "”和角色设定，"
                 + "分享一件此刻刚发生的具体小事或一个自然念头。"
                 + "最多两句，不要早安晚安，不要泛泛关心，不要问“在吗/干嘛/最近好吗”。";
-    }
-
-    private static String relevantMemory(String memory, String query, int maxItems) {
-        if (memory == null || memory.trim().isEmpty()) {
-            return "";
-        }
-        String[] lines = memory.split("\\r?\\n");
-        String[] keys = {
-                "考试", "学习", "作业", "项目", "工作", "提交", "睡眠", "睡觉", "失眠",
-                "跑步", "运动", "喜欢", "讨厌", "生病", "难受", "压力", "明天", "昨天", "约定"
-        };
-        List<String> selected = new ArrayList<>();
-        for (int i = lines.length - 1; i >= 0 && selected.size() < maxItems; i -= 1) {
-            String line = lines[i].trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-            boolean relevant = i >= lines.length - 4;
-            for (String key : keys) {
-                if (query.contains(key) && line.contains(key)) {
-                    relevant = true;
-                    break;
-                }
-            }
-            if (relevant) {
-                selected.add(0, line);
-            }
-        }
-        return joinLines(selected);
     }
 
     private String reply(
@@ -548,8 +520,6 @@ public class LiveChatWorker extends Worker {
             Map<String, CharacterInfo> characters
     ) throws Exception {
         boolean isGroup = "group".equals(conversation.optString("type"));
-        boolean independentProactive = plan.id.startsWith("proactive-")
-                && !plan.reason.contains("未完成");
         String membersText = memberSummary(conversation.optJSONArray("memberIds"), characters);
         StringBuilder system = new StringBuilder();
         system.append("最高优先级身份约束：你正在真实扮演《原神》角色「")
@@ -564,17 +534,22 @@ public class LiveChatWorker extends Worker {
                 .append("消息必须像微信，最多两句、72字；可以只分享一件小事，不必提问或帮助旅行者。\n\n")
                 .append("主动消息必须带来一个新的具体动作、发现或念头，绝不能复述、拼接或改写最近说过的话。\n\n")
                 .append("如果旅行者最后一句已经得到过回应，就不要再次回应同一个请求；改发新的角色日常或真正的后续结果。\n\n")
-                .append("以下是你的 SoulMD，必须始终遵守：\n")
+                .append("以下是你的完整角色专属 Prompt，必须始终遵守：\n")
+                .append(speaker.prompt)
+                .append("\n\n以下是你的 SoulMD，必须始终遵守：\n")
                 .append(speaker.soulMd)
                 .append("\n\n对话对象是旅行者。\n当前会话：")
                 .append(isGroup ? "群聊" : "单聊")
                 .append("。\n");
-        if (isGroup && !independentProactive) {
+        if (isGroup) {
             system.append("你正在「")
                     .append(conversation.optString("title"))
                     .append("」中发言，群成员包括：")
                     .append(membersText)
                     .append("。\n")
+                    .append("以下是你的群聊专属 Prompt：\n")
+                    .append(speaker.groupPrompt)
+                    .append("\n")
                     .append("你只能代表自己发言，不能替其他群成员写台词。\n");
         }
         JSONArray messages = new JSONArray();
@@ -582,12 +557,9 @@ public class LiveChatWorker extends Worker {
 
         JSONObject memoryMap = conversation.optJSONObject("memoryMdByCharacter");
         String memory = memoryMap == null ? "" : memoryMap.optString(speaker.id, "").trim();
-        memory = relevantMemory(memory, plan.prompt, 6);
-        if (!memory.isEmpty()) {
-            messages.put(new JSONObject()
-                    .put("role", "system")
-                    .put("content", "这是本轮相关的 MemoryMD 片段，只作为记忆，不要照抄：\n" + memory));
-        }
+        messages.put(new JSONObject()
+                .put("role", "system")
+                .put("content", persistentCharacterState(conversation, speaker, memory)));
         String summary = conversation.optString("summary", "");
         if (!summary.isEmpty()) {
             messages.put(new JSONObject()
@@ -595,25 +567,20 @@ public class LiveChatWorker extends Worker {
                     .put("content", "较早聊天历史摘要：\n" + summary));
         }
         if (isGroup) {
-            String recent = recentText(conversation, 24);
+            String recent = recentText(conversation, RECENT_CONTEXT_MESSAGE_LIMIT);
             if (!recent.isEmpty()) {
                 messages.put(new JSONObject()
                         .put("role", "system")
-                        .put("content", "最近群聊记录：\n" + recent));
+                        .put("content", "最近" + RECENT_CONTEXT_MESSAGE_LIMIT + "条群聊记录：\n" + recent));
             }
-        } else if (!isGroup && !independentProactive) {
-            JSONArray history = conversation.optJSONArray("messages");
-            int start = Math.max(0, history == null ? 0 : history.length() - 18);
-            if (history != null) {
-                for (int i = start; i < history.length(); i += 1) {
-                    JSONObject message = history.optJSONObject(i);
-                    if (message == null) {
-                        continue;
-                    }
-                    messages.put(new JSONObject()
-                            .put("role", "user".equals(message.optString("sender")) ? "user" : "assistant")
-                            .put("content", message.optString("content")));
-                }
+        } else {
+            for (JSONObject message : recentMessages(
+                    conversation,
+                    RECENT_CONTEXT_MESSAGE_LIMIT
+            )) {
+                messages.put(new JSONObject()
+                        .put("role", "user".equals(message.optString("sender")) ? "user" : "assistant")
+                        .put("content", message.optString("content")));
             }
         }
         messages.put(new JSONObject()
@@ -626,6 +593,47 @@ public class LiveChatWorker extends Worker {
                         + "本次跟进缘由：" + plan.reason + "\n"
                         + "本次生活线索：" + plan.prompt));
         return messages;
+    }
+
+    private static String persistentCharacterState(
+            JSONObject conversation,
+            CharacterInfo speaker,
+            String memory
+    ) {
+        JSONObject lastSpokeMap = conversation.optJSONObject("lastSpokeAtByCharacter");
+        String lastSpokeAt = lastSpokeMap == null
+                ? "暂无记录"
+                : lastSpokeMap.optString(speaker.id, "暂无记录");
+        StringBuilder unfinished = new StringBuilder();
+        JSONArray followUps = conversation.optJSONArray("followUps");
+        if (followUps != null) {
+            for (int i = 0; i < followUps.length(); i += 1) {
+                JSONObject item = followUps.optJSONObject(i);
+                if (item == null || !speaker.id.equals(item.optString("speakerId"))) {
+                    continue;
+                }
+                if (unfinished.length() > 0) {
+                    unfinished.append('\n');
+                }
+                unfinished.append("- 预计时间：")
+                        .append(item.optString("dueAt", "未指定"))
+                        .append("；原因：")
+                        .append(item.optString("reason", "继续之前的话题"))
+                        .append("；后续：")
+                        .append(item.optString("prompt", "自然跟进"));
+            }
+        }
+        return "【完整长期记忆 MemoryMD】\n"
+                + (memory == null || memory.trim().isEmpty()
+                ? "暂无已写入的长期记忆。"
+                : memory.trim())
+                + "\n\n【与旅行者的关系状态】\n"
+                + "用户就是旅行者；延续共同经历和已有亲疏，不把旅行者当陌生客户。\n"
+                + "最近一次旅行者发言："
+                + conversation.optString("lastUserReplyAt", "暂无记录")
+                + "\n最近一次" + speaker.name + "发言：" + lastSpokeAt
+                + "\n\n【未完成话题】\n"
+                + (unfinished.length() == 0 ? "暂无明确登记的未完成话题。" : unfinished.toString());
     }
 
     private static String llmComplete(JSONObject settings, JSONArray messages, double temperature)
@@ -1122,23 +1130,30 @@ public class LiveChatWorker extends Worker {
     }
 
     private static String recentText(JSONObject conversation, int limit) {
-        JSONArray messages = conversation.optJSONArray("messages");
-        if (messages == null || messages.length() == 0) {
-            return "";
-        }
-        int start = Math.max(0, messages.length() - limit);
         StringBuilder builder = new StringBuilder();
-        for (int i = start; i < messages.length(); i += 1) {
-            JSONObject message = messages.optJSONObject(i);
-            if (message == null) {
-                continue;
-            }
+        for (JSONObject message : recentMessages(conversation, limit)) {
             builder.append(messageAuthor(message))
                     .append("：")
                     .append(message.optString("content"))
                     .append("\n");
         }
         return builder.toString().trim();
+    }
+
+    private static List<JSONObject> recentMessages(JSONObject conversation, int limit) {
+        JSONArray messages = conversation.optJSONArray("messages");
+        List<JSONObject> selected = new ArrayList<>();
+        if (messages == null || messages.length() == 0 || limit <= 0) {
+            return selected;
+        }
+        for (int i = messages.length() - 1; i >= 0 && selected.size() < limit; i -= 1) {
+            JSONObject message = messages.optJSONObject(i);
+            if (message == null || "system".equals(message.optString("sender"))) {
+                continue;
+            }
+            selected.add(0, message);
+        }
+        return selected;
     }
 
     private static String messageAuthor(JSONObject message) {
@@ -1327,14 +1342,18 @@ public class LiveChatWorker extends Worker {
         final String name;
         final String enName;
         final String title;
+        final String prompt;
         final String soulMd;
+        final String groupPrompt;
 
         CharacterInfo(JSONObject json) {
             id = json.optString("id", "");
             name = json.optString("name", "");
             enName = json.optString("enName", "");
             title = json.optString("title", "");
+            prompt = json.optString("prompt", "");
             soulMd = json.optString("soulMd", json.optString("prompt", ""));
+            groupPrompt = json.optString("groupPrompt", "");
         }
 
         List<String> names() {

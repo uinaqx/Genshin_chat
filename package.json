@@ -18,7 +18,8 @@
     "normalize:curated-prompts": "node tools/normalize-curated-profiles.mjs",
     "import:curated-prompts": "node tools/import-curated-prompts.mjs",
     "audit:curated-prompts": "node tools/audit-curated-prompts.mjs",
-    "review:curated-prompts": "node tools/review-curated-prompts.mjs"
+    "review:curated-prompts": "node tools/review-curated-prompts.mjs",
+    "sync:android-characters": "node tools/sync-android-characters.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

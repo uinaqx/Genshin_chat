@@ -30,7 +30,8 @@ const _wechatSubText = Color(0xFF888888);
 const _wechatLine = Color(0xFFE5E5E5);
 const _wechatBar = Color(0xFFF7F7F7);
 const _wechatChatBg = Color(0xFFEDEDED);
-String _appVersion = '2.0.0+20';
+const int recentContextMessageLimit = 100;
+String _appVersion = '2.1.0+21';
 
 class TravelerProfile {
   const TravelerProfile({
@@ -195,6 +196,7 @@ class Character {
     required this.cardUrl,
     required this.prompt,
     required this.soulMd,
+    this.groupPrompt = '',
   });
 
   final String id;
@@ -210,6 +212,7 @@ class Character {
   final String cardUrl;
   final String prompt;
   final String soulMd;
+  final String groupPrompt;
 
   String get regionLabel => nation.isEmpty ? '未知地区' : nation;
 
@@ -262,6 +265,7 @@ class Character {
       cardUrl: json['cardUrl'] as String? ?? '',
       prompt: json['prompt'] as String? ?? '',
       soulMd: json['soulMd'] as String? ?? json['prompt'] as String? ?? '',
+      groupPrompt: json['groupPrompt'] as String? ?? '',
     );
   }
 }
@@ -1841,8 +1845,15 @@ class GroupChatOrchestrator {
             final recency = lastSpokeAt == null
                 ? '本群尚未发言'
                 : '${now.difference(lastSpokeAt).inMinutes}分钟前发过言';
-            return '${c.id}:${c.name}，群聊倾向：${p.groupSpeakingTendency}，'
-                '语气：${p.tone}，最近状态：$recency';
+            return '''
+【${c.id}:${c.name}】
+群聊倾向：${p.groupSpeakingTendency}
+语气：${p.tone}
+最近状态：$recency
+群聊专属 Prompt：
+${c.groupPrompt}
+${_persistentCharacterState(conversation: conversation, speaker: c, profile: p)}
+''';
           })
           .join('\n');
       final raw = await llm.complete(
@@ -1859,7 +1870,7 @@ class GroupChatOrchestrator {
             'role': 'user',
             'content':
                 '当前本地时间：${_chatTimeLabel(now)}\n'
-                '群成员：\n$profiles\n\n最近聊天：\n${_recentText(conversation, 16)}\n\n'
+                '群成员及其完整状态：\n$profiles\n\n最近${recentContextMessageLimit}条聊天：\n${_recentText(conversation, recentContextMessageLimit)}\n\n'
                 '旅行者刚说：$userText\n\n'
                 '输出格式：{"speakers":[{"character_id":"id","reason":"原因","dialogue_act":"吐槽/关心/回答/接别人话/转移话题等","length":"very_short/short/medium"}]}',
           },
@@ -1955,28 +1966,19 @@ class GroupChatOrchestrator {
 }
 
 class ContextBuilder {
-  ContextBuilder() : _memoryRetriever = const RelevantMemoryRetriever();
-
-  final RelevantMemoryRetriever _memoryRetriever;
-
   List<Map<String, String>> build({
     required ConversationState conversation,
     required Character speaker,
     required CharacterProfile profile,
     required DialoguePlan plan,
     required String userText,
-    required bool includeMemory,
     GroupSpeakerPlan? groupPlan,
     bool appendUserMessage = true,
-    bool includeRecentHistory = true,
   }) {
     final isGroup = conversation.type == 'group';
     final now = DateTime.now();
     final fullMemory =
         conversation.memoryMdByCharacter[speaker.id]?.trim() ?? '';
-    final memory = includeMemory
-        ? _memoryRetriever.retrieve(fullMemory, userText)
-        : '';
     final examples = profile.sampleReplies
         .take(6)
         .map((e) => '旅行者：${e['user']}\n${speaker.name}：${e['reply']}')
@@ -1996,8 +1998,13 @@ class ContextBuilder {
 禁止风格：${profile.avoid.join(' / ')}
 群聊倾向：${profile.groupSpeakingTendency}
 
+【角色专属 Prompt】
+${speaker.prompt}
+
 【SoulMD】
 ${speaker.soulMd}
+
+${isGroup ? '【群聊专属 Prompt】\n${speaker.groupPrompt}' : ''}
 
 【短回复样例】
 $examples
@@ -2032,15 +2039,16 @@ $examples
         'content': '较早聊天摘要：\n${conversation.summary}',
       });
     }
-    if (includeMemory && memory.isNotEmpty) {
-      messages.add({
-        'role': 'system',
-        'content': '与本轮最相关的 MemoryMD 片段（只作为记忆，不要照抄）：\n$memory',
-      });
-    }
-    final recent = includeRecentHistory
-        ? _recentWithinBudget(conversation, maxCharacters: 3200)
-        : <ChatMessage>[];
+    messages.add({
+      'role': 'system',
+      'content': _persistentCharacterState(
+        conversation: conversation,
+        speaker: speaker,
+        profile: profile,
+        fullMemory: fullMemory,
+      ),
+    });
+    final recent = recentContextMessages(conversation);
     if (isGroup && recent.isNotEmpty) {
       final transcript = recent
           .map((message) {
@@ -2060,110 +2068,69 @@ $examples
         }
       }
     }
-    if (appendUserMessage &&
-        (isGroup || recent.isEmpty || recent.last.content != userText)) {
+    if (appendUserMessage && !_endsWithUserBatch(recent, userText)) {
       messages.add({'role': 'user', 'content': userText});
     }
     return messages;
   }
 
-  List<ChatMessage> _recentWithinBudget(
-    ConversationState conversation, {
-    required int maxCharacters,
-  }) {
-    final selected = <ChatMessage>[];
-    var used = 0;
-    for (final message in conversation.messages.reversed) {
-      if (message.sender == 'system') continue;
-      final cost = message.content.length + 28;
-      if (selected.length >= 24 ||
-          (selected.length >= 8 && used + cost > maxCharacters)) {
-        break;
-      }
-      selected.add(message);
-      used += cost;
+  bool _endsWithUserBatch(List<ChatMessage> recent, String userText) {
+    final trailing = <String>[];
+    for (final message in recent.reversed) {
+      if (!message.isUser) break;
+      trailing.add(message.content);
     }
-    return selected.reversed.toList();
+    if (trailing.isEmpty) return false;
+    return trailing.reversed.join('\n').trim() == userText.trim();
   }
 }
 
-class RelevantMemoryRetriever {
-  const RelevantMemoryRetriever();
+List<ChatMessage> recentContextMessages(ConversationState conversation) {
+  final messages = conversation.messages
+      .where((message) => message.sender != 'system')
+      .toList();
+  final start = max(0, messages.length - recentContextMessageLimit);
+  return messages.sublist(start);
+}
 
-  String retrieve(String memory, String query, {int maxItems = 6}) {
-    final lines = memory
-        .split(RegExp(r'\r?\n'))
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
-    if (lines.isEmpty) return '';
-    final terms = _terms(query);
-    final scored = <({int index, int score, String line})>[];
-    for (var index = 0; index < lines.length; index += 1) {
-      final line = lines[index];
-      var score = index >= lines.length - 4 ? 1 : 0;
-      for (final term in terms) {
-        if (term.length >= 2 && line.toLowerCase().contains(term)) {
-          score += term.length >= 4 ? 4 : 2;
-        }
-      }
-      if (_sameTopicFamily(query, line)) score += 4;
-      if (score > 0) {
-        scored.add((index: index, score: score, line: line));
-      }
-    }
-    scored.sort((a, b) {
-      final byScore = b.score.compareTo(a.score);
-      return byScore != 0 ? byScore : b.index.compareTo(a.index);
-    });
-    final selected = scored.take(maxItems).toList()
-      ..sort((a, b) => a.index.compareTo(b.index));
-    return selected.map((item) => item.line).join('\n');
-  }
+String _persistentCharacterState({
+  required ConversationState conversation,
+  required Character speaker,
+  required CharacterProfile profile,
+  String? fullMemory,
+}) {
+  final memory =
+      (fullMemory ?? conversation.memoryMdByCharacter[speaker.id] ?? '').trim();
+  final lastSpokeAt = conversation.lastSpokeAtByCharacter[speaker.id];
+  final pending =
+      conversation.followUps
+          .where((item) => item.speakerId == speaker.id)
+          .toList()
+        ..sort((a, b) => a.dueAt.compareTo(b.dueAt));
+  final unfinished = pending.isEmpty
+      ? '暂无明确登记的未完成话题。'
+      : pending
+            .map(
+              (item) =>
+                  '- 预计时间：${item.dueAt.toIso8601String()}\n'
+                  '  原因：${item.reason}\n'
+                  '  后续：${item.prompt}',
+            )
+            .join('\n');
+  return '''
+【完整长期记忆 MemoryMD】
+${memory.isEmpty ? '暂无已写入的长期记忆。' : memory}
 
-  bool hasRelevant(String memory, String query) {
-    if (memory.trim().isEmpty) return false;
-    final result = retrieve(memory, query, maxItems: 2);
-    return result.isNotEmpty;
-  }
+【与旅行者的关系状态】
+基础关系：${profile.relationshipToTraveler}
+会话类型：${conversation.type == 'group' ? '群聊' : '私聊'}
+最近一次旅行者发言：${conversation.lastUserReplyAt?.toIso8601String() ?? '暂无记录'}
+最近一次${speaker.name}发言：${lastSpokeAt?.toIso8601String() ?? '暂无记录'}
+当前关系原则：用户就是旅行者；延续共同经历、已有亲疏和最近互动，不把旅行者当陌生客户。
 
-  Set<String> _terms(String text) {
-    final normalized = text.toLowerCase().replaceAll(
-      RegExp(r'[^\u4e00-\u9fffa-z0-9]+'),
-      ' ',
-    );
-    final result = <String>{};
-    for (final token in normalized.split(' ')) {
-      if (token.length < 2) continue;
-      if (RegExp(r'^[a-z0-9]+$').hasMatch(token)) {
-        result.add(token);
-        continue;
-      }
-      final maxSize = min(4, token.length);
-      for (var size = 2; size <= maxSize; size += 1) {
-        for (var i = 0; i + size <= token.length; i += 1) {
-          result.add(token.substring(i, i + size));
-        }
-      }
-    }
-    return result;
-  }
-
-  bool _sameTopicFamily(String query, String line) {
-    const families = [
-      ['考试', '学习', '作业', '复习', '学校'],
-      ['项目', '工作', '提交', '截止', 'ddl'],
-      ['睡眠', '睡觉', '失眠', '熬夜', '困'],
-      ['跑步', '运动', '锻炼', '体测'],
-      ['喜欢', '讨厌', '偏好', '想吃', '爱吃'],
-      ['生病', '难受', '医院', '药', '身体'],
-    ];
-    return families.any(
-      (family) =>
-          family.any(query.toLowerCase().contains) &&
-          family.any(line.toLowerCase().contains),
-    );
-  }
+【未完成话题】
+$unfinished
+''';
 }
 
 class ResponseGenerator {
@@ -2474,11 +2441,15 @@ class ReplyBubbleSplitter {
 }
 
 class MemoryStore {
-  MemoryStore({required this.llm, required this.settings});
+  MemoryStore({
+    required this.llm,
+    required this.settings,
+    required this.characters,
+  });
 
   final LlmClient llm;
   final AppSettings settings;
-  final RelevantMemoryRetriever _retriever = const RelevantMemoryRetriever();
+  final Map<String, Character> characters;
 
   Future<String?> maybeUpdate({
     required ConversationState conversation,
@@ -2490,6 +2461,7 @@ class MemoryStore {
       return null;
     }
     final existing = conversation.memoryMdByCharacter[speaker.id] ?? '';
+    final profile = CharacterProfile.fromCharacter(speaker);
     final prompt =
         '''
 你在维护${speaker.name}与旅行者之间的 MemoryMD。
@@ -2498,6 +2470,17 @@ class MemoryStore {
 
 现有MemoryMD：
 $existing
+
+角色完整设定：
+${speaker.prompt}
+
+角色 SoulMD：
+${speaker.soulMd}
+
+${_persistentCharacterState(conversation: conversation, speaker: speaker, profile: profile, fullMemory: existing)}
+
+最近${recentContextMessageLimit}条原始消息：
+${_recentText(conversation, recentContextMessageLimit)}
 
 本轮：
 旅行者：$userText
@@ -2521,7 +2504,21 @@ ${speaker.name}：${reply.content}
     if (conversation.messages.length - conversation.summarizedCount < 30) {
       return null;
     }
-    final text = _recentText(conversation, 50);
+    final text = _recentText(conversation, recentContextMessageLimit);
+    final participantContext = conversation.memberIds
+        .map((id) => characters[id])
+        .whereType<Character>()
+        .map((character) {
+          final profile = CharacterProfile.fromCharacter(character);
+          return '''
+【${character.name}完整角色设定】
+${character.prompt}
+${character.soulMd}
+${conversation.type == 'group' ? character.groupPrompt : ''}
+${_persistentCharacterState(conversation: conversation, speaker: character, profile: profile)}
+''';
+        })
+        .join('\n');
     final summary = await llm.complete(
       settings,
       [
@@ -2529,7 +2526,10 @@ ${speaker.name}：${reply.content}
         {
           'role': 'user',
           'content':
-              '已有摘要：\n${conversation.summary}\n\n新增聊天：\n$text\n\n请压缩成不超过300字，保留话题、未完成事项和关系变化。',
+              '参与角色与状态：\n$participantContext\n\n'
+              '已有摘要：\n${conversation.summary}\n\n'
+              '最近${recentContextMessageLimit}条原始消息：\n$text\n\n'
+              '请压缩成不超过300字，保留话题、未完成事项和关系变化。',
         },
       ],
       temperature: 0.2,
@@ -2537,26 +2537,6 @@ ${speaker.name}：${reply.content}
     );
     conversation.summarizedCount = conversation.messages.length;
     return summary.trim();
-  }
-
-  bool shouldUseMemory(ConversationState conversation, Character speaker) {
-    final memory = conversation.memoryMdByCharacter[speaker.id]?.trim() ?? '';
-    if (memory.isEmpty) return false;
-    final currentUsers = conversation.messages.reversed
-        .where((message) => message.isUser)
-        .take(1);
-    final currentText = currentUsers.isEmpty ? '' : currentUsers.first.content;
-    final previousMessageAt = conversation.messages.length >= 2
-        ? conversation.messages[conversation.messages.length - 2].createdAt
-        : null;
-    final longGap =
-        previousMessageAt != null &&
-        DateTime.now().difference(previousMessageAt) > const Duration(hours: 8);
-    final query = currentText;
-    final asksPast = RegExp(
-      r'(之前|上次|记得|昨天|前天|那件事|项目|考试|作业|还记得)',
-    ).hasMatch(query);
-    return longGap || asksPast || _retriever.hasRelevant(memory, query);
   }
 
   static bool _looksMemoryWorthy(String text) {
@@ -2654,7 +2634,7 @@ class ProactiveMessageScheduler {
 
   String? _unfinishedSeed(ConversationState conversation) {
     final memory = conversation.memoryMdByCharacter.values.join('\n');
-    final recent = _recentText(conversation, 14);
+    final recent = _recentText(conversation, recentContextMessageLimit);
     final source = '$memory\n$recent';
     final match = RegExp(
       r'([^。\n！？]*?(明天|后天|一小时|半小时|等会|到时候|项目|作业|考试|提交|交上去|睡觉|跑步)[^。\n！？]*)',
@@ -2743,7 +2723,11 @@ class ChatAgent {
          settings: settings,
          characters: characters,
        ),
-       _memory = MemoryStore(llm: llm, settings: settings),
+       _memory = MemoryStore(
+         llm: llm,
+         settings: settings,
+         characters: characters,
+       ),
        _group = GroupChatOrchestrator(
          characters: characters,
          settings: settings,
@@ -2813,7 +2797,6 @@ class ChatAgent {
     if (!plan.shouldReply) {
       throw Exception('本轮角色选择沉默。');
     }
-    final includeMemory = _memory.shouldUseMemory(conversation, speaker);
     final groupPlan = _lastGroupPlans[speaker.id];
     final messages = _contextBuilder.build(
       conversation: conversation,
@@ -2821,7 +2804,6 @@ class ChatAgent {
       profile: profile,
       plan: plan,
       userText: userText,
-      includeMemory: includeMemory,
       groupPlan: groupPlan,
     );
     if (settings.searchEnabled && _looksLikeSearchNeed(userText)) {
@@ -2882,9 +2864,7 @@ class ChatAgent {
       profile: profile,
       plan: plan,
       userText: followUp.prompt,
-      includeMemory: true,
       appendUserMessage: false,
-      includeRecentHistory: !followUp.id.startsWith('proactive-'),
     );
     messages.add({
       'role': 'system',
@@ -2944,6 +2924,22 @@ class ChatAgent {
       return null;
     }
     try {
+      final profile = CharacterProfile.fromCharacter(speaker);
+      final context =
+          '''
+【角色专属 Prompt】
+${speaker.prompt}
+
+【SoulMD】
+${speaker.soulMd}
+
+${conversation.type == 'group' ? '【群聊专属 Prompt】\n${speaker.groupPrompt}' : ''}
+
+${_persistentCharacterState(conversation: conversation, speaker: speaker, profile: profile)}
+
+【最近${recentContextMessageLimit}条原始消息】
+${_recentText(conversation, recentContextMessageLimit)}
+''';
       final raw = await llm.complete(
         settings,
         [
@@ -2954,7 +2950,9 @@ class ChatAgent {
           {
             'role': 'user',
             'content':
-                '旅行者：$userText\n${speaker.name}：${reply.content}\n\n输出：{"delay_minutes":60,"reason":"为什么跟进","prompt":"到时候要自然问什么"}；如果不需要，输出{"delay_minutes":0}',
+                '$context\n\n'
+                '旅行者：$userText\n${speaker.name}：${reply.content}\n\n'
+                '输出：{"delay_minutes":60,"reason":"为什么跟进","prompt":"到时候要自然问什么"}；如果不需要，输出{"delay_minutes":0}',
           },
         ],
         temperature: 0.2,
@@ -3043,7 +3041,9 @@ String _extractJsonObject(String raw) {
 }
 
 String _recentText(ConversationState conversation, int limit) {
-  final messages = conversation.messages;
+  final messages = conversation.messages
+      .where((message) => message.sender != 'system')
+      .toList();
   if (messages.isEmpty) return '';
   final start = max(0, messages.length - limit);
   return messages
@@ -3067,6 +3067,35 @@ String _chatTimeLabel(DateTime time) {
   };
   final minute = time.minute.toString().padLeft(2, '0');
   return '${time.month}月${time.day}日$period ${time.hour}:$minute';
+}
+
+class ConversationTurnQueue {
+  final Map<String, List<String>> _pending = {};
+  final Set<String> _processing = {};
+
+  bool enqueue(String conversationId, String text) {
+    final content = text.trim();
+    if (content.isEmpty) return false;
+    _pending.putIfAbsent(conversationId, () => <String>[]).add(content);
+    return _processing.add(conversationId);
+  }
+
+  List<String> takeBatch(String conversationId) {
+    final batch = _pending.remove(conversationId);
+    return batch == null ? <String>[] : List<String>.from(batch);
+  }
+
+  bool get isEmpty => _pending.values.every((items) => items.isEmpty);
+
+  bool isProcessing(String conversationId) =>
+      _processing.contains(conversationId);
+
+  void finish(String conversationId) {
+    _processing.remove(conversationId);
+    if (_pending[conversationId]?.isEmpty ?? false) {
+      _pending.remove(conversationId);
+    }
+  }
 }
 
 String _normalizeReplyForSchedule(String text) {
@@ -3152,6 +3181,7 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
   Map<String, ConversationState> _conversations = {};
   final Map<String, String> _typingStatus = {};
   final Set<String> _busyConversations = {};
+  final ConversationTurnQueue _turnQueue = ConversationTurnQueue();
   Timer? _followUpTimer;
   AppSettings _settings = const AppSettings();
   bool _loading = true;
@@ -3370,8 +3400,6 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
     _updates.value += 1;
   }
 
-  bool _isConversationBusy(String id) => _busyConversations.contains(id);
-
   String? _typingLabel(String id) => _typingStatus[id];
 
   void _showTransientError(Object error) {
@@ -3391,9 +3419,7 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
 
   Future<void> _sendMessage(ConversationState conversation, String text) async {
     final content = text.trim();
-    if (content.isEmpty || _busyConversations.contains(conversation.id)) {
-      return;
-    }
+    if (content.isEmpty) return;
     final now = DateTime.now();
     conversation.messages.add(
       ChatMessage(sender: 'user', content: content, createdAt: now),
@@ -3403,15 +3429,23 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
     if (conversation.realChatEnabled) {
       const ProactiveMessageScheduler().scheduleNext(conversation);
     }
-    _busyConversations.add(conversation.id);
+    final shouldStart = _turnQueue.enqueue(conversation.id, content);
+    final firstBatch = shouldStart
+        ? _turnQueue.takeBatch(conversation.id)
+        : const <String>[];
+    if (shouldStart) {
+      _busyConversations.add(conversation.id);
+    }
     await _store.saveConversations(_conversations);
     _notifyChanged();
-    unawaited(_finishReplies(conversation, content));
+    if (shouldStart) {
+      unawaited(_drainReplyQueue(conversation, firstBatch));
+    }
   }
 
-  Future<void> _finishReplies(
+  Future<void> _drainReplyQueue(
     ConversationState conversation,
-    String userText,
+    List<String> firstBatch,
   ) async {
     final agent = ChatAgent(
       characters: _characterById,
@@ -3419,91 +3453,110 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
       llm: _llm,
       search: _search,
     );
-
     try {
-      final showTyping = conversation.type != 'group';
-      await _delayBeforeTyping();
-      if (showTyping) {
-        _typingStatus[conversation.id] = '正在输入...';
-        _notifyChanged();
-      }
-      final typingStartedAt = DateTime.now();
-      final speakers = await agent.chooseSpeakers(conversation, userText);
-      if (showTyping) {
-        await _waitForMinimumTyping(
-          typingStartedAt,
-          const Duration(milliseconds: 1500),
-        );
-      }
-      if (speakers.isEmpty) {
-        return;
-      }
-
-      for (final speaker in speakers) {
-        if (showTyping) {
-          _typingStatus[conversation.id] = '正在输入...';
-          _notifyChanged();
+      var batch = firstBatch;
+      while (batch.isNotEmpty) {
+        final userText = batch.join('\n');
+        try {
+          await _processReplyBatch(agent, conversation, userText);
+        } catch (error) {
+          _showTransientError(error);
         }
-        final speakerStartedAt = DateTime.now();
-        final replies = await agent.replyFromSpeaker(
-          conversation,
-          userText,
-          speaker,
-        );
-        if (showTyping) {
-          await _waitForMinimumTyping(
-            speakerStartedAt,
-            const Duration(milliseconds: 1500),
-          );
-        }
-        final acceptedReplies = <ChatMessage>[];
-        for (final reply in replies) {
-          if (_isNearDuplicateReply(conversation, reply)) {
-            continue;
-          }
-          if (acceptedReplies.isNotEmpty) {
-            await Future.delayed(
-              Duration(milliseconds: 420 + _random.nextInt(481)),
-            );
-          }
-          conversation.messages.add(reply);
-          acceptedReplies.add(reply);
-          conversation.updatedAt = DateTime.now();
-          conversation.lastCharacterPingAt = DateTime.now();
-          conversation.lastSpokeAtByCharacter[speaker.id] = DateTime.now();
-          await _store.saveConversations(_conversations);
-          _notifyChanged();
-        }
-        if (acceptedReplies.isNotEmpty) {
-          if (conversation.realChatEnabled) {
-            const ProactiveMessageScheduler().scheduleNext(conversation);
-          }
-          final combinedReply = ChatMessage(
-            sender: 'assistant',
-            content: acceptedReplies.map((reply) => reply.content).join('\n'),
-            createdAt: acceptedReplies.last.createdAt,
-            characterId: speaker.id,
-            authorName: speaker.name,
-          );
-          try {
-            await _maybeUpdateConversationState(
-              agent,
-              conversation,
-              speaker,
-              userText,
-              combinedReply,
-            );
-            await _store.saveConversations(_conversations);
-          } catch (_) {}
-        }
+        batch = _turnQueue.takeBatch(conversation.id);
       }
-    } catch (error) {
-      _showTransientError(error);
     } finally {
+      _turnQueue.finish(conversation.id);
       _busyConversations.remove(conversation.id);
       _typingStatus.remove(conversation.id);
       await _store.saveConversations(_conversations);
       _notifyChanged();
+    }
+  }
+
+  Future<void> _processReplyBatch(
+    ChatAgent agent,
+    ConversationState conversation,
+    String userText,
+  ) async {
+    final generationConversation = ConversationState.fromJson(
+      conversation.toJson(),
+    );
+    final showTyping = conversation.type != 'group';
+    await _delayBeforeTyping();
+    if (showTyping) {
+      _typingStatus[conversation.id] = '正在输入...';
+      _notifyChanged();
+    }
+    final typingStartedAt = DateTime.now();
+    final speakers = await agent.chooseSpeakers(
+      generationConversation,
+      userText,
+    );
+    if (showTyping) {
+      await _waitForMinimumTyping(
+        typingStartedAt,
+        const Duration(milliseconds: 1500),
+      );
+    }
+    if (speakers.isEmpty) return;
+
+    for (final speaker in speakers) {
+      if (showTyping) {
+        _typingStatus[conversation.id] = '正在输入...';
+        _notifyChanged();
+      }
+      final speakerStartedAt = DateTime.now();
+      final replies = await agent.replyFromSpeaker(
+        generationConversation,
+        userText,
+        speaker,
+      );
+      if (showTyping) {
+        await _waitForMinimumTyping(
+          speakerStartedAt,
+          const Duration(milliseconds: 1500),
+        );
+      }
+      final acceptedReplies = <ChatMessage>[];
+      for (final reply in replies) {
+        if (_isNearDuplicateReply(conversation, reply)) continue;
+        if (acceptedReplies.isNotEmpty) {
+          await Future.delayed(
+            Duration(milliseconds: 420 + _random.nextInt(481)),
+          );
+        }
+        conversation.messages.add(reply);
+        generationConversation.messages.add(reply);
+        acceptedReplies.add(reply);
+        conversation.updatedAt = DateTime.now();
+        conversation.lastCharacterPingAt = DateTime.now();
+        conversation.lastSpokeAtByCharacter[speaker.id] = DateTime.now();
+        generationConversation.lastSpokeAtByCharacter[speaker.id] =
+            DateTime.now();
+        await _store.saveConversations(_conversations);
+        _notifyChanged();
+      }
+      if (acceptedReplies.isEmpty) continue;
+      if (conversation.realChatEnabled) {
+        const ProactiveMessageScheduler().scheduleNext(conversation);
+      }
+      final combinedReply = ChatMessage(
+        sender: 'assistant',
+        content: acceptedReplies.map((reply) => reply.content).join('\n'),
+        createdAt: acceptedReplies.last.createdAt,
+        characterId: speaker.id,
+        authorName: speaker.name,
+      );
+      try {
+        await _maybeUpdateConversationState(
+          agent,
+          conversation,
+          speaker,
+          userText,
+          combinedReply,
+        );
+        await _store.saveConversations(_conversations);
+      } catch (_) {}
     }
   }
 
@@ -3787,7 +3840,6 @@ class _TeyvatChatAppState extends State<TeyvatChatApp>
           characters: _characterById,
           traveler: _settings.traveler,
           updates: _updates,
-          isBusy: _isConversationBusy,
           typingLabel: _typingLabel,
           onSend: _sendMessage,
           onEditGroup: _showEditGroupMembers,
@@ -4983,7 +5035,6 @@ class ChatPage extends StatefulWidget {
     required this.characters,
     required this.traveler,
     required this.updates,
-    required this.isBusy,
     required this.typingLabel,
     required this.onSend,
     required this.onEditGroup,
@@ -4995,7 +5046,6 @@ class ChatPage extends StatefulWidget {
   final Map<String, Character> characters;
   final TravelerProfile traveler;
   final ValueListenable<int> updates;
-  final bool Function(String id) isBusy;
   final String? Function(String id) typingLabel;
   final Future<void> Function(ConversationState conversation, String text)
   onSend;
@@ -5031,7 +5081,6 @@ class _ChatPageState extends State<ChatPage> {
       valueListenable: widget.updates,
       builder: (context, _, __) {
         final conversation = widget.conversation;
-        final busy = widget.isBusy(conversation.id);
         final isGroup = conversation.type == 'group';
         final typing = isGroup ? null : widget.typingLabel(conversation.id);
         final messages = conversation.messages;
@@ -5177,14 +5226,12 @@ class _ChatPageState extends State<ChatPage> {
                             maxLines: 5,
                             textInputAction: TextInputAction.send,
                             onChanged: (_) => setState(() {}),
-                            onSubmitted: (_) => busy ? null : _send(),
-                            decoration: InputDecoration(
-                              hintText: busy ? '等待当前回复完成' : '输入消息',
+                            onSubmitted: (_) => _send(),
+                            decoration: const InputDecoration(
+                              hintText: '输入消息',
                               border: InputBorder.none,
                               isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 9,
-                              ),
+                              contentPadding: EdgeInsets.symmetric(vertical: 9),
                             ),
                             style: const TextStyle(fontSize: 17, height: 1.25),
                           ),
@@ -5195,7 +5242,7 @@ class _ChatPageState extends State<ChatPage> {
                         duration: const Duration(milliseconds: 120),
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeInCubic,
-                        child: _controller.text.trim().isEmpty || busy
+                        child: _controller.text.trim().isEmpty
                             ? IconButton(
                                 key: const ValueKey('more'),
                                 visualDensity: VisualDensity.compact,

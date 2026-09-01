@@ -10,7 +10,7 @@
 ## 项目状态
 
 - **网页端：当前主线。** GitHub `main` 直接包含并维护 Next.js 网页版，不再把网页代码放在独立功能分支中。
-- **Android 端：还未完成。** 仓库继续保留 Flutter/Android 源码、历史 APK 和相关资料，方便后续继续开发，但它目前不是推荐版本，也不代表网页版的最新能力。
+- **Android 端：重构进行中。** `2.1.0+21` 开发预览版已经同步完整角色资料、100条上下文与连续发送队列，但安全存储、数据库迁移和新版界面尚未完成，因此仍不作为推荐版本。[下载 Android 开发预览 APK](https://github.com/uinaqx/Genshin_chat/raw/main/releases/teyvat-chat-release.apk)
 - Render 主站与 GPT Sites 版是两个独立部署，登录方式、聊天记录和更新节奏彼此独立；当前优先推荐 Render 主站。
 
 ## 功能
@@ -40,8 +40,8 @@
 
 - `app/`、`data/`、`public/`、`third_party/`：当前主线的 Next.js 网页端、角色数据库与完整角色资料。
 - `render.yaml`：Render 主站及 PostgreSQL 的部署配置。
-- `android/`、`ios/`、`lib/`、`assets/`：保留的 Flutter 移动端工程；Android 端目前还未完成。
-- `releases/`：历史 Android APK，仅用于存档和测试。
+- `android/`、`ios/`、`lib/`、`assets/`：正在重构的 Flutter 移动端工程与完整 Android 角色资源。
+- `releases/`：Android 开发预览 APK，仅用于阶段验收和测试。
 
 ## 角色提示词来源
 
@@ -65,6 +65,7 @@ npm run generate:curated-prompts
 npm run normalize:curated-prompts
 npm run import:curated-prompts
 npm run audit:curated-prompts
+npm run sync:android-characters
 ```
 
 `review:curated-prompts` 会调用模型做第二视角的事实审查，需要配置可用的服务端模型密钥。确定性审计不依赖模型判断，并逐角色检查来源、哈希、长度、章节、旅行者身份、原作短句、已知事实回归和数据库同步。
@@ -120,6 +121,16 @@ Web Service 与 PostgreSQL 必须部署在同一区域。Blueprint 当前将两�
 - 对话、消息、队列和每日用量均按账号隔离。
 
 ## 更新记录
+
+### Android 2.1.0+21 开发预览 - 2026-09-01
+
+- 完成旧安卓聊天算法审计，确认并开始移除短历史、条件记忆、输入锁定和前后台两套提示词实现造成的行为分叉。
+- Android 角色资源由网页版数据库自动生成：共132条记录，排除5种元素旅行者后为127名可聊角色，全部包含完整私聊 Prompt、群聊 Prompt 和 SoulMD。
+- 所有对话模型调用统一携带最近100条非系统消息、完整长期记忆、与旅行者的关系状态和未完成话题；主动消息不再故意排除最近聊天。
+- 修复 Android 只读取 SoulMD、未实际发送新版完整 Prompt 和群聊 Prompt 的问题。
+- 输入框在模型回复期间保持可用；新消息进入当前会话队列，在上一轮结束后合并为下一批请求。
+- 新增17项 Flutter 回归测试，完成静态分析、Release APK 构建和 Android 35 模拟器安装/启动/连续发送验收。
+- 本版仍是开发预览：普通 JSON 文件存储、API Key 安全存储和前后台聊天引擎合并将在后续阶段继续重构。
 
 ### 仓库主线调整 - 2026-09-01
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.0+21
+
+- Synced all 132 web character records into the Android asset, including 127 chatable characters with complete private prompts, group prompts, and SoulMD files.
+- Added a reproducible `npm run sync:android-characters` validation and synchronization command.
+- Replaced the old 14/16/24-message context paths with one mandatory 100-message context contract in foreground replies, group planning, scheduled follow-ups, memory maintenance, summaries, and the native Android worker.
+- Made complete long-term MemoryMD, traveler relationship state, and unfinished follow-up topics mandatory in every dialogue model request.
+- Fixed Android prompt loading so complete private prompts and group prompts are actually sent instead of loading only SoulMD.
+- Added a per-conversation turn queue: users can keep sending while a reply is running, and newly arrived messages are merged into the next request batch.
+- Kept the chat input enabled during model work and isolated each request from messages queued for the following batch.
+- Added regression tests for the 100-message boundary, mandatory persistent context, character asset completeness, message batching, and per-conversation queue isolation.
+
 ## 2.0.0+20
 
 - Rebuilt context assembly around a bounded recent-history budget with local timestamps.
