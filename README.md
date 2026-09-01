@@ -1,8 +1,17 @@
-# 提瓦特微信 Web
+# 提瓦特微信
 
-> **网页版：[立即打开提瓦特微信](https://teyvat-wechat.onrender.com)**
+> **当前主线：网页版**
+>
+> **Render 主站：[立即体验提瓦特微信](https://teyvat-wechat.onrender.com)**
+> **GPT Sites 版：[使用 ChatGPT 登录体验](https://teyvat-wechat-chat.robust-guppy-2902.chatgpt.site)**
 
 一个面向浏览器的《原神》角色聊天应用。注册后可以与 127 名非旅行者角色私聊，也可以自由组合角色创建群聊。全部可聊角色都具备独立私聊 Prompt、群聊 Prompt 与完整 SoulMD；每个账号拥有独立聊天记录，模型密钥仅保存在服务端环境变量中。
+
+## 项目状态
+
+- **网页端：当前主线。** GitHub `main` 直接包含并维护 Next.js 网页版，不再把网页代码放在独立功能分支中。
+- **Android 端：还未完成。** 仓库继续保留 Flutter/Android 源码、历史 APK 和相关资料，方便后续继续开发，但它目前不是推荐版本，也不代表网页版的最新能力。
+- Render 主站与 GPT Sites 版是两个独立部署，登录方式、聊天记录和更新节奏彼此独立；当前优先推荐 Render 主站。
 
 ## 功能
 
@@ -26,6 +35,13 @@
 - bcrypt 密码哈希
 - DeepSeek OpenAI 兼容接口
 - Render Web Service + Render Postgres
+
+## 仓库结构
+
+- `app/`、`data/`、`public/`、`third_party/`：当前主线的 Next.js 网页端、角色数据库与完整角色资料。
+- `render.yaml`：Render 主站及 PostgreSQL 的部署配置。
+- `android/`、`ios/`、`lib/`、`assets/`：保留的 Flutter 移动端工程；Android 端目前还未完成。
+- `releases/`：历史 Android APK，仅用于存档和测试。
 
 ## 角色提示词来源
 
@@ -104,6 +120,12 @@ Web Service 与 PostgreSQL 必须部署在同一区域。Blueprint 当前将两�
 - 对话、消息、队列和每日用量均按账号隔离。
 
 ## 更新记录
+
+### 仓库主线调整 - 2026-09-01
+
+- 将完整网页版历史与文件合入 GitHub `main`，后续网页更新直接在主线维护，不再以 `web-render` 作为产品主分支。
+- 保留原有 Flutter、Android、iOS、桌面端源码和历史 APK，避免丢失此前工作；README 明确标注 Android 端还未完成。
+- 在 README 顶部增加 Render 主站与 GPT Sites 版两个体验入口，并说明两套部署的数据和更新节奏相互独立。
 
 ### 3.0.0 - 2026-08-28
 
