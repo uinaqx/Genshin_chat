@@ -10,7 +10,7 @@
 ## 项目状态
 
 - **网页端：当前主线。** GitHub `main` 直接包含并维护 Next.js 网页版，不再把网页代码放在独立功能分支中。
-- **Android 端：重构进行中。** `2.1.0+21` 开发预览版已经同步完整角色资料、100条上下文与连续发送队列，但安全存储、数据库迁移和新版界面尚未完成，因此仍不作为推荐版本。[下载 Android 开发预览 APK](https://github.com/uinaqx/Genshin_chat/raw/main/releases/teyvat-chat-release.apk)
+- **Android 端：`3.0.0+30` 本地重构版。** 无需登录或 Render，密钥由 Android Keystore 加密，聊天记录使用本地 SQLite 保存。[下载 Android 3.0 APK](https://github.com/uinaqx/Genshin_chat/raw/main/releases/teyvat-chat-release.apk)
 - Render 主站与 GPT Sites 版是两个独立部署，登录方式、聊天记录和更新节奏彼此独立；当前优先推荐 Render 主站。
 
 ## 功能
@@ -40,8 +40,8 @@
 
 - `app/`、`data/`、`public/`、`third_party/`：当前主线的 Next.js 网页端、角色数据库与完整角色资料。
 - `render.yaml`：Render 主站及 PostgreSQL 的部署配置。
-- `android/`、`ios/`、`lib/`、`assets/`：正在重构的 Flutter 移动端工程与完整 Android 角色资源。
-- `releases/`：Android 开发预览 APK，仅用于阶段验收和测试。
+- `android/`、`ios/`、`lib/`、`assets/`：Flutter 移动端工程、SQLite/Keystore 本地实现与完整 Android 角色资源。
+- `releases/`：可直接安装的 Android 正式 APK。
 
 ## 角色提示词来源
 
@@ -121,6 +121,19 @@ Web Service 与 PostgreSQL 必须部署在同一区域。Blueprint 当前将两�
 - 对话、消息、队列和每日用量均按账号隔离。
 
 ## 更新记录
+
+### Android 3.0.0+30 - 2026-09-05
+
+- 将 6600 余行单文件拆分为数据层、模型网关、聊天引擎、应用控制器和 UI 五个模块，并保持 127 名角色资源与网页版一致。
+- 启用 Android Keystore AES-GCM 安全存储 API Key；旧明文密钥会一次性迁移并从普通设置文件删除。
+- 聊天记录、长期记忆、待跟进话题、关系状态和回复队列改用 SQLite 持久化，回复过程中仍可连续发送，应用重启后会继续处理未完成批次。
+- 每次请求固定携带最近 100 条消息、完整角色 Prompt/SoulMD、长期记忆、关系状态和未完成话题。
+- 群聊由本地导演选择 0 至 3 名说话者，整轮只调用一次模型，再按严格的 `character_id` 绑定名称、头像和多气泡，避免群聊串人。
+- 未完成话题可由 WorkManager 在后台跟进，并以系统通知告知用户；未轮到跟进的普通闲聊不会随机刷屏。
+- 重做微信式浅色玻璃界面，统一聊天、通讯录和“我的”的底部安全区，旅行者性别改为名称右侧一键切换。
+- 新增 20 项回归测试，覆盖上下文边界、队列恢复、单次群聊请求、密钥安全与前后台合并。
+
+> 数据说明：Android 3.0 使用全新 `teyvat_chat_v3.db`，不自动导入 2.x 的旧 JSON 聊天记录；升级后从新的本地聊天库开始。
 
 ### Android 2.1.0+21 开发预览 - 2026-09-01
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.0+30
+
+- Split the legacy Flutter monolith into data, model gateway, chat engine, controller, and UI modules.
+- Replaced Android JSON chat persistence with normalized SQLite storage for conversations, messages, memories, follow-ups, relationship state, and durable reply queues.
+- Moved API credentials into Android Keystore-backed AES-GCM storage with one-time plaintext migration and deletion.
+- Made the latest 100 messages, full role prompts/SoulMD, long-term memory, relationship state, and unfinished threads mandatory for every dialogue request.
+- Rebuilt group turns as one model request after local speaker planning, with strict character-ID validation and deterministic avatar/name binding.
+- Added process-restart recovery for queued user turns and Android notifications for contextual WorkManager follow-ups.
+- Refined the mobile UI with a light glass treatment, a consistent floating bottom bar, direct latest-message positioning, and one-tap Aether/Lumine switching.
+- Added 20 regression tests covering context, persistence, one-call group turns, credential safety, proactive scheduling, and foreground/background reconciliation.
+- Started a new `teyvat_chat_v3.db`; 2.x JSON conversation history is intentionally not auto-imported.
+
 ## 2.1.0+21
 
 - Synced all 132 web character records into the Android asset, including 127 chatable characters with complete private prompts, group prompts, and SoulMD files.

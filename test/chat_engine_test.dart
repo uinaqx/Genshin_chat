@@ -21,6 +21,23 @@ const _character = Character(
   groupPrompt: '纳西妲在群聊中会先观察，再自然接话。',
 );
 
+const _furina = Character(
+  id: 'furina',
+  name: '芙宁娜',
+  enName: 'Furina',
+  title: '不休独舞',
+  vision: '水',
+  weapon: '单手剑',
+  nation: '枫丹',
+  rarity: 5,
+  description: '戏剧化、敏锐，也会用夸张掩饰认真。',
+  avatarUrl: '',
+  cardUrl: '',
+  prompt: '芙宁娜专属测试 Prompt：用户就是旅行者。',
+  soulMd: '芙宁娜经历过枫丹预言，与旅行者熟识。',
+  groupPrompt: '芙宁娜会在群聊中用鲜明语气接话。',
+);
+
 void main() {
   test('Android 角色资源包含127名完整可聊角色', () {
     final root =
@@ -278,6 +295,14 @@ void main() {
       type: 'single',
       memberIds: const ['nahida'],
       memoryMdByCharacter: const {'nahida': '- 旅行者正在准备考试\n- 旅行者最近睡眠不好'},
+      relationshipStateByCharacter: {
+        'nahida': RelationshipState(
+          stage: '长期同行、彼此信任',
+          currentMood: '担心旅行者休息不足',
+          recentTopics: const ['考试', '睡眠'],
+          lastInteractionAt: DateTime(2026, 8, 2, 19),
+        ),
+      },
       followUps: [
         ScheduledFollowUp(
           id: 'exam-follow-up',
@@ -314,6 +339,9 @@ void main() {
     expect(prompt, contains('纳西妲是须弥的草神'));
     expect(prompt, contains('旅行者正在准备考试'));
     expect(prompt, contains('与旅行者的关系状态'));
+    expect(prompt, contains('长期同行、彼此信任'));
+    expect(prompt, contains('担心旅行者休息不足'));
+    expect(prompt, contains('考试 / 睡眠'));
     expect(prompt, contains('询问考试结果'));
     expect(prompt, contains('问旅行者考试是否顺利结束'));
   });
@@ -354,6 +382,130 @@ void main() {
     expect(queue.enqueue('furina', '枫丹消息'), isTrue);
     expect(queue.takeBatch('nahida'), ['须弥消息']);
     expect(queue.takeBatch('furina'), ['枫丹消息']);
+  });
+
+  test('处理中和等待中的消息会一起持久化并可在重启后恢复', () {
+    final queue = ConversationTurnQueue();
+    expect(queue.enqueue('nahida', '第一条'), isTrue);
+    expect(queue.takeBatch('nahida'), ['第一条']);
+    expect(queue.enqueue('nahida', '第二条'), isFalse);
+
+    final restored = ConversationTurnQueue()..restore(queue.toJson());
+    expect(restored.pendingConversationIds, ['nahida']);
+    expect(restored.begin('nahida'), isTrue);
+    expect(restored.takeBatch('nahida'), ['第一条', '第二条']);
+  });
+
+  test('群聊整轮只调用一次模型并按角色ID绑定多气泡', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var requestCount = 0;
+    final serverTask = () async {
+      await for (final request in server) {
+        requestCount += 1;
+        final requestBody = await utf8.decoder.bind(request).join();
+        expect(requestBody, contains('纳西妲专属测试 Prompt'));
+        expect(requestBody, contains('芙宁娜专属测试 Prompt'));
+        expect(requestBody, contains('最近100条群聊'));
+        final groupPayload = jsonEncode({
+          'messages': [
+            {
+              'character_id': 'nahida',
+              'content': ['先坐一会儿。', '今天是被什么累到了？'],
+            },
+            {
+              'character_id': 'furina',
+              'content': ['居然累成这样。'],
+            },
+          ],
+        });
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {'content': groupPayload},
+              },
+            ],
+          }),
+        );
+        await request.response.close();
+        await server.close(force: true);
+      }
+    }();
+    final settings = AppSettings(
+      apiKey: 'test-key',
+      baseUrl:
+          'http://${InternetAddress.loopbackIPv4.address}:${server.port}/v1/chat/completions',
+      model: 'test-model',
+      searchEnabled: false,
+      maxTokens: 420,
+    );
+    final client = HttpTextClient();
+    final agent = ChatAgent(
+      characters: const {'nahida': _character, 'furina': _furina},
+      settings: settings,
+      llm: LlmClient(client),
+      search: WebSearchService(client),
+    );
+    final conversation = ConversationState(
+      id: 'group-test',
+      title: '测试群聊',
+      type: 'group',
+      memberIds: const ['nahida', 'furina'],
+      memoryMdByCharacter: const {
+        'nahida': '- 旅行者昨天在赶项目',
+        'furina': '- 旅行者答应看新剧目',
+      },
+      messages: [
+        ChatMessage(
+          sender: 'user',
+          content: '纳西妲，今天好累，你们呢？',
+          createdAt: DateTime(2026, 9, 3, 21),
+        ),
+      ],
+    );
+
+    final replies = await agent.replyGroupTurn(conversation, '纳西妲，今天好累，你们呢？');
+    await serverTask;
+
+    expect(requestCount, 1);
+    expect(replies.map((message) => message.characterId), [
+      'nahida',
+      'nahida',
+      'furina',
+    ]);
+    expect(replies.map((message) => message.authorName), ['纳西妲', '纳西妲', '芙宁娜']);
+    expect(replies.map((message) => message.content), [
+      '先坐一会儿。',
+      '今天是被什么累到了？',
+      '居然累成这样。',
+    ]);
+  });
+
+  test('Android凭据和聊天后台不再读取普通明文存储', () {
+    final mainActivity = File(
+      'android/app/src/main/java/com/local/genshin/genshin_chat/MainActivity.java',
+    ).readAsStringSync();
+    final worker = File(
+      'android/app/src/main/java/com/local/genshin/genshin_chat/LiveChatWorker.java',
+    ).readAsStringSync();
+    final secureStore = File(
+      'android/app/src/main/java/com/local/genshin/genshin_chat/SecureApiKeyStore.java',
+    ).readAsStringSync();
+    final database = File(
+      'android/app/src/main/java/com/local/genshin/genshin_chat/TeyvatDatabase.java',
+    ).readAsStringSync();
+
+    expect(mainActivity, contains('SecureApiKeyStore.save'));
+    expect(mainActivity, contains('TeyvatDatabase.get'));
+    expect(worker, isNot(contains('conversations.json')));
+    expect(worker, isNot(contains('getString("api_key"')));
+    expect(secureStore, contains('AndroidKeyStore'));
+    expect(secureStore, contains('AES/GCM/NoPadding'));
+    expect(database, contains('CREATE TABLE messages'));
+    expect(database, contains('CREATE TABLE character_memories'));
+    expect(database, contains('CREATE TABLE follow_ups'));
+    expect(database, contains('CREATE TABLE reply_queue'));
   });
 
   test('合并批次不会在模型上下文中重复追加用户消息', () {

@@ -1,8 +1,17 @@
 package com.local.genshin.genshin_chat;
 
+import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 
 import androidx.annotation.NonNull;
+import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 import androidx.work.Constraints;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.ExistingWorkPolicy;
@@ -43,6 +52,7 @@ import java.util.concurrent.TimeUnit;
 
 public class LiveChatWorker extends Worker {
     private static final int RECENT_CONTEXT_MESSAGE_LIMIT = 100;
+    private static final String MESSAGE_CHANNEL = "teyvat_character_messages";
     private static final String PERIODIC_WORK = "teyvat_follow_up_periodic";
     private static final String ONCE_WORK = "teyvat_follow_up_once";
 
@@ -103,7 +113,7 @@ public class LiveChatWorker extends Worker {
             if (apiKey(context).trim().isEmpty()) {
                 return false;
             }
-            JSONObject conversations = readObject(new File(context.getFilesDir(), "conversations.json"));
+            JSONObject conversations = TeyvatDatabase.get(context).loadConversations();
             JSONArray items = conversations.optJSONArray("items");
             if (items == null) {
                 return false;
@@ -128,7 +138,7 @@ public class LiveChatWorker extends Worker {
         long now = System.currentTimeMillis();
         long nearest = now + TimeUnit.MINUTES.toMillis(15);
         try {
-            JSONObject conversations = readObject(new File(context.getFilesDir(), "conversations.json"));
+            JSONObject conversations = TeyvatDatabase.get(context).loadConversations();
             JSONArray items = conversations.optJSONArray("items");
             if (items == null) {
                 return 15L;
@@ -171,14 +181,13 @@ public class LiveChatWorker extends Worker {
 
     private void runFollowUps() throws Exception {
         Context context = getApplicationContext();
-        File conversationFile = new File(context.getFilesDir(), "conversations.json");
         JSONObject settings = readObject(new File(context.getFilesDir(), "settings.json"));
         String apiKey = apiKey(context);
         if (apiKey.trim().isEmpty()) {
             return;
         }
         settings.put("apiKey", apiKey);
-        JSONObject data = readObject(conversationFile);
+        JSONObject data = TeyvatDatabase.get(context).loadConversations();
         JSONArray items = data.optJSONArray("items");
         if (items == null) {
             return;
@@ -234,14 +243,21 @@ public class LiveChatWorker extends Worker {
                     messages = new JSONArray();
                     conversation.put("messages", messages);
                 }
-                JSONObject message = new JSONObject();
-                message.put("sender", "assistant");
-                message.put("content", answer);
-                message.put("createdAt", nowString());
-                message.put("characterId", speaker.id);
-                message.put("authorName", speaker.name);
-                if (!isNearDuplicateReply(messages, message)) {
-                    messages.put(message);
+                boolean added = false;
+                List<String> bubbles = splitReplyBubbles(answer);
+                for (String bubble : bubbles) {
+                    JSONObject message = new JSONObject();
+                    message.put("sender", "assistant");
+                    message.put("content", bubble);
+                    message.put("createdAt", nowString());
+                    message.put("characterId", speaker.id);
+                    message.put("authorName", speaker.name);
+                    if (!isNearDuplicateReply(messages, message)) {
+                        messages.put(message);
+                        added = true;
+                    }
+                }
+                if (added) {
                     conversation.put("updatedAt", nowString());
                     JSONObject lastSpoke = conversation.optJSONObject("lastSpokeAtByCharacter");
                     if (lastSpoke == null) {
@@ -257,6 +273,11 @@ public class LiveChatWorker extends Worker {
                     if (conversation.optBoolean("realChatEnabled", false)) {
                         conversation.put("nextPingAt", formatTime(nextProactiveAt(conversation, now)));
                     }
+                    showMessageNotification(
+                            context,
+                            conversation.optString("title", speaker.name),
+                            bubbles.isEmpty() ? answer : bubbles.get(0)
+                    );
                 }
                 handled += 1;
                 if (handled >= 3) {
@@ -264,18 +285,88 @@ public class LiveChatWorker extends Worker {
                 }
             }
         }
-        writeObject(conversationFile, data);
+        TeyvatDatabase.get(context).saveConversations(data);
+    }
+
+    private static List<String> splitReplyBubbles(String answer) {
+        List<String> result = new ArrayList<>();
+        String[] lines = answer.trim().split("\\n+");
+        for (String line : lines) {
+            String clean = line.trim();
+            if (!clean.isEmpty()) {
+                result.add(clean);
+            }
+            if (result.size() >= 2) {
+                return result;
+            }
+        }
+        if (result.size() == 1) {
+            String only = result.get(0);
+            String[] sentences = only.split("(?<=[。！？!?])");
+            if (sentences.length > 1) {
+                result.clear();
+                for (String sentence : sentences) {
+                    String clean = sentence.trim();
+                    if (!clean.isEmpty()) {
+                        result.add(clean);
+                    }
+                    if (result.size() >= 2) {
+                        break;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    private static void showMessageNotification(Context context, String title, String body) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+        ) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        NotificationManager manager = (NotificationManager) context.getSystemService(
+                Context.NOTIFICATION_SERVICE
+        );
+        if (manager == null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    MESSAGE_CHANNEL,
+                    "角色消息",
+                    NotificationManager.IMPORTANCE_DEFAULT
+            );
+            channel.setDescription("角色主动发来的新消息");
+            manager.createNotificationChannel(channel);
+        }
+        Intent launchIntent = new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                context,
+                0,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        NotificationCompat.Builder notification = new NotificationCompat.Builder(
+                context,
+                MESSAGE_CHANNEL
+        )
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+        manager.notify((int) (System.currentTimeMillis() & 0x7fffffff), notification.build());
     }
 
     private static String apiKey(Context context) {
-        String stored = context.getSharedPreferences("teyvat_secure_settings", Context.MODE_PRIVATE)
-                .getString("api_key", "");
-        if (stored != null && !stored.trim().isEmpty()) {
-            return stored;
-        }
         try {
-            JSONObject settings = readObject(new File(context.getFilesDir(), "settings.json"));
-            return settings.optString("apiKey", "");
+            return SecureApiKeyStore.load(context);
         } catch (Exception ignored) {
             return "";
         }
@@ -604,6 +695,30 @@ public class LiveChatWorker extends Worker {
         String lastSpokeAt = lastSpokeMap == null
                 ? "暂无记录"
                 : lastSpokeMap.optString(speaker.id, "暂无记录");
+        JSONObject relationshipMap = conversation.optJSONObject("relationshipStateByCharacter");
+        JSONObject relationship = relationshipMap == null
+                ? null
+                : relationshipMap.optJSONObject(speaker.id);
+        String relationshipStage = relationship == null
+                ? "熟识"
+                : relationship.optString("stage", "熟识");
+        String currentMood = relationship == null
+                ? "自然"
+                : relationship.optString("currentMood", "自然");
+        String recentTopics = "暂无记录";
+        if (relationship != null) {
+            JSONArray topics = relationship.optJSONArray("recentTopics");
+            if (topics != null && topics.length() > 0) {
+                StringBuilder topicText = new StringBuilder();
+                for (int index = 0; index < topics.length(); index += 1) {
+                    if (topicText.length() > 0) {
+                        topicText.append(" / ");
+                    }
+                    topicText.append(topics.optString(index, ""));
+                }
+                recentTopics = topicText.toString();
+            }
+        }
         StringBuilder unfinished = new StringBuilder();
         JSONArray followUps = conversation.optJSONArray("followUps");
         if (followUps != null) {
@@ -629,6 +744,9 @@ public class LiveChatWorker extends Worker {
                 : memory.trim())
                 + "\n\n【与旅行者的关系状态】\n"
                 + "用户就是旅行者；延续共同经历和已有亲疏，不把旅行者当陌生客户。\n"
+                + "当前关系阶段：" + relationshipStage
+                + "\n当前互动情绪：" + currentMood
+                + "\n近期共同话题：" + recentTopics + "\n"
                 + "最近一次旅行者发言："
                 + conversation.optString("lastUserReplyAt", "暂无记录")
                 + "\n最近一次" + speaker.name + "发言：" + lastSpokeAt
